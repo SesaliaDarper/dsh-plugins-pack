@@ -1,0 +1,16 @@
+# 依赖与构建产物
+node_modules/
+__pycache__/
+*.pyc
+
+# 备份（作者本地的 *.bak-* 习惯）
+*.bak
+*.bak-*
+*.bak_*
+
+# 插件运行时落盘的状态（通知主题缓存等）
+packages/*/state/
+
+# 系统垃圾
+.DS_Store
+Thumbs.db

@@ -1,0 +1,38 @@
+{
+  "gemini-cat": {
+    "name": "Gemini猫猫",
+    "art": "gemini-cat.webp",
+    "accents": [
+      "#5B63E8",
+      "#8E7BF0",
+      "#E08BD8"
+    ]
+  },
+  "zlm": {
+    "name": "ZLM",
+    "art": "zlm.webp",
+    "accents": [
+      "#242C42",
+      "#4A5F8C",
+      "#A6BCE4"
+    ]
+  },
+  "grok": {
+    "name": "Grok娘",
+    "art": "grok.webp",
+    "accents": [
+      "#2A1F1A",
+      "#7A5C22",
+      "#B99442"
+    ]
+  },
+  "gpt": {
+    "name": "GPT娘",
+    "art": "gpt.webp",
+    "accents": [
+      "#123B38",
+      "#0F7A66",
+      "#3FA98C"
+    ]
+  }
+}

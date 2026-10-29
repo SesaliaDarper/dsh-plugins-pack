@@ -1,0 +1,8 @@
+{
+  "title": "Session cost badge",
+  "description": "Shows what this session spent on DeepSeek official models in the session header (official CNY price list, peak/off-peak aware). Click for the token breakdown, per-model split, and recent calls. Non-official routes are never priced and the badge stays hidden.",
+  "meta": {
+    "title": "Session Cost Badge",
+    "description": "Shows what this session spent on DeepSeek official models in the session header, with the token breakdown, per-model split and recent calls."
+  }
+}

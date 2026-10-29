@@ -1,0 +1,65 @@
+{
+  "name": "dsh-token-widget",
+  "version": "1.2.0",
+  "private": false,
+  "description": "DSH 会话挂件 — 角色立绘 + 气泡显示本会话 token 用量与上下文占用；面板可切换立绘，界面字体配色跟随角色主题",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "icon": "./icon.svg",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-theme"
+      ],
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "files": [
+    "lib",
+    "assets",
+    "locale",
+    "preview",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md"
+  ],
+  "scripts": {
+    "art": "python tools/prepare-art.py",
+    "build": "node tools/build.mjs",
+    "all": "python tools/prepare-art.py && node tools/build.mjs"
+  },
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "widget",
+    "balance",
+    "usage",
+    "token"
+  ],
+  "author": "SesaliaDarper",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SesaliaDarper/dsh-plugins-pack.git",
+    "directory": "packages/dsh-token-widget"
+  },
+  "homepage": "https://github.com/SesaliaDarper/dsh-plugins-pack/tree/main/packages/dsh-token-widget#readme",
+  "bugs": {
+    "url": "https://github.com/SesaliaDarper/dsh-plugins-pack/issues"
+  }
+}

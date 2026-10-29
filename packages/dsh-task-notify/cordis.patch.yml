@@ -1,0 +1,8 @@
+# dsh-task-notify 组合包 patch
+#
+# 「任务完成通知」从硬编码 insert 迁到这里，由 profile 的 dsh.profile.bundles 选择。
+# 在侧栏「插件」页关闭本组合包即可热卸载：宿主侧 turn/end 监听、主题上报接口
+# 与右下角弹窗进程一起停掉。
+- insert:
+    - id: task-notify
+      name: 'dsh-task-notify'

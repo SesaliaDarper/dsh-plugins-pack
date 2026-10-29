@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32" role="img" aria-label="美化 UI（Gemini 猫猫）">
+  <!-- 插件卡片图标：美化 UI（Gemini 猫猫主题）。夜空底 + 猫耳头像 + 星屑。 -->
+  <rect x="0" y="0" width="32" height="32" rx="8" fill="#2a2140" />
+  <path d="M9.2 14.6L10.3 7l4.7 3.4h2l4.7-3.4 1.1 7.6" fill="#f6d7e0" />
+  <circle cx="16" cy="19.4" r="7" fill="#f6d7e0" />
+  <ellipse cx="13.3" cy="18.6" rx="1.05" ry="1.5" fill="#3a2b4d" />
+  <ellipse cx="18.7" cy="18.6" rx="1.05" ry="1.5" fill="#3a2b4d" />
+  <path d="M15.2 21.4q0.8 0.9 1.6 0" fill="none" stroke="#3a2b4d" stroke-width="0.9" stroke-linecap="round" />
+  <path d="M25.4 6.4l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z" fill="#ffe9a8" />
+  <circle cx="6.6" cy="24" r="0.9" fill="#c9b8ff" opacity="0.9" />
+</svg>

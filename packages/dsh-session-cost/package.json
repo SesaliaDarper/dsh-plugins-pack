@@ -1,0 +1,70 @@
+{
+  "name": "dsh-session-cost",
+  "version": "1.1.0",
+  "private": false,
+  "description": "会话费用徽章 — 在会话标题栏显示本会话在 DeepSeek 官方 API / 账号模型上花掉的钱（官方人民币/美元价目表，区分高峰与空闲时段），点开看明细",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json",
+    "./icon.svg": "./assets/icon.svg",
+    "./locale/*.json": "./locale/*.json"
+  },
+  "icon": "./assets/icon.svg",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ],
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "meta": {
+    "title": "会话费用徽章",
+    "description": "在会话标题栏显示本会话在 DeepSeek 官方模型上花掉的费用（人民币，按官方价目表、区分高峰/空闲时段），点开可看 token 明细、按模型拆分与最近调用。"
+  },
+  "files": [
+    "lib",
+    "assets",
+    "locale",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "node tools/build.mjs",
+    "smoke": "node tools/smoke-test.mjs",
+    "all": "node tools/build.mjs && node tools/smoke-test.mjs",
+    "install-profile": "node tools/install-profile.mjs"
+  },
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "cost",
+    "usage",
+    "billing",
+    "pricing"
+  ],
+  "author": "SesaliaDarper",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SesaliaDarper/dsh-plugins-pack.git",
+    "directory": "packages/dsh-session-cost"
+  },
+  "homepage": "https://github.com/SesaliaDarper/dsh-plugins-pack/tree/main/packages/dsh-session-cost#readme",
+  "bugs": {
+    "url": "https://github.com/SesaliaDarper/dsh-plugins-pack/issues"
+  }
+}

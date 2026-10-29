@@ -1,0 +1,58 @@
+{
+  "name": "dsh-theme-gemini-cat",
+  "version": "1.7.0",
+  "private": false,
+  "description": "Gemini猫猫 / GLM / Grok娘 / GPT娘 / Claude娘 — DSH 自定义主题：角色立绘 + 极简对话背景（纯色底 + 角色纹样淡色水印 + 右侧立绘，深浅两套，透明度/磨砂可调）+ 主题 logo",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./locale/*.json": "./locale/*.json",
+    "./package.json": "./package.json"
+  },
+  "icon": "./icon.svg",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-theme"
+      ],
+      "platform": "web",
+      "immediately": true
+    }
+  },
+  "files": [
+    "lib",
+    "locale",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md"
+  ],
+  "license": "MIT",
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "theme",
+    "skin",
+    "beautify",
+    "anime"
+  ],
+  "author": "SesaliaDarper",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SesaliaDarper/dsh-plugins-pack.git",
+    "directory": "packages/dsh-theme-gemini-cat"
+  },
+  "homepage": "https://github.com/SesaliaDarper/dsh-plugins-pack/tree/main/packages/dsh-theme-gemini-cat#readme",
+  "bugs": {
+    "url": "https://github.com/SesaliaDarper/dsh-plugins-pack/issues"
+  }
+}

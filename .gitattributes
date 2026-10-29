@@ -1,0 +1,12 @@
+* text=auto eol=lf
+
+# Windows 脚本用 CRLF，其余（sh / js / py / yml / json / md）保持 LF
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# 二进制素材
+*.png binary
+*.webp binary
+*.jpg binary
+*.ico binary

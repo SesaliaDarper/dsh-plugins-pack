@@ -1,0 +1,24 @@
+# dsh-image-gen 组合包 patch
+#
+# 生图插件：image_generate 工具（模型用）、/image 命令（用户手敲）、
+# 「生图台」面板（直接对生图模型提要求）、「设置 → 生图」专区。
+#
+# 增删生图模型不用改本文件：打开「设置 → 生图」加一行删一行，DSH 会把覆盖
+# 写成 profile cordis.patch.yml 里一条同 id 的顶层条目（后写覆盖先写）。
+#
+# 装好之后请在「设置 → 生图」里改成你自己的接口地址与密钥引用名：
+#   · baseURL   —— 下面这行只是示例，任意 OpenAI 兼容的 /v1 生图端点都可以
+#   · apiKeyEnv —— 只放「引用名」，真正的值写进 $DSH_HOME/.credentials.yaml 的 refs 节
+#   · studioDir —— 留空即 $DSH_HOME/image-studio（推荐首次使用就留空）
+- insert:
+    - id: image-gen
+      name: 'dsh-image-gen'
+      config:
+        baseURL: https://api.yitaizhongji.com/v1   # 示例，换成你自己的
+        apiKeyEnv: YITAIZHONGJI_IMAGE_API_KEY
+        model: gpt-image-2.5
+        defaultSize: 1024x1024
+        outputDir: dsh-images
+        # 生图台的固定输出目录；留空则用 $DSH_HOME/image-studio
+        studioDir: ''
+        maxImages: 4

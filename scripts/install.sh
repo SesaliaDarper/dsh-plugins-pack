@@ -4,7 +4,7 @@
 #       DSH_HOME=/path DSH_PROFILE=desktop bash scripts/install.sh
 set -euo pipefail
 
-ALL_PACKAGES=(dsh-token-widget dsh-session-cost dsh-task-notify dsh-theme-gemini-cat)
+ALL_PACKAGES=(dsh-image-gen dsh-token-widget dsh-session-cost dsh-task-notify dsh-theme-gemini-cat)
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DSH_HOME="${DSH_HOME:-$HOME/.dsh}"
 PROFILE="${DSH_PROFILE:-desktop}"

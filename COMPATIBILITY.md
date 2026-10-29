@@ -1,13 +1,13 @@
 # 兼容性实测记录
 
-四个包不是"写完就发"，是**在一套干净的 DSH profile 里装上去、启起来、把 bundle 拉下来验过**才发布的。
+五个包不是"写完就发"，是**在一套干净的 DSH profile 里装上去、启起来、把 bundle 拉下来验过**才发布的。
 这份文件记下验的时间、环境、每一项检查和证据，方便你复验，也方便 DSH 升级后快速判断还能不能用。
 
 ## 结论
 
-**四个包在 DSH `0.2.1-rc.2` 上全部通过**：宿主侧装载无报错、客户端 bundle 全部构建成功并正常下发、
+**五个包在 DSH `0.2.1-rc.2` 上全部通过**：宿主侧装载无报错、客户端 bundle 全部构建成功并正常下发、
 会话费用投影注册成功、自检接口 200、通知弹窗渲染进程能在 DSH 自带 Python 下起活、
-安装脚本与卸载脚本各跑通一次。
+生图台的宿主路由能读出真实文件、生图插件自检 95/95、安装脚本与卸载脚本各跑通一次。
 
 ## 环境
 
@@ -26,14 +26,16 @@
 
 | # | 检查 | 方法 | 结果 |
 | --- | --- | --- | --- |
-| 1 | 清单结构 | 四个 `package.json` 都有 `dsh.bundle.patch`、`dsh.client.inject`、`exports["./client"]` | 通过 |
+| 1 | 清单结构 | 五个 `package.json` 都有 `dsh.bundle.patch`、`dsh.client.inject`、`exports["./client"]` | 通过 |
 | 2 | 运行时版本约束 | `engines.dsh: ">=0.2.1-rc.2 <0.3.0"`，按 DSH 自己的 `evaluatePluginCompatibility` 语义（prerelease 参与匹配） | 通过 |
 | 3 | 语法与 JSON | 全部 `lib/*.js`、`tools/*.mjs` 过 `node --check`；全部 `*.json` 过 `JSON.parse` | 通过（0 错误） |
-| 4 | profile 组合 | `dsh --profile <p> --dump-config`，确认四行 insert 落在组合树末尾 | 通过（`theme-gemini-cat` / `session-cost` / `task-notify` / `token-widget` 各一行） |
+| 4 | profile 组合 | `dsh --profile <p> --dump-config`，确认五行 insert 落在组合树末尾 | 通过（`image-gen` / `theme-gemini-cat` / `session-cost` / `task-notify` / `token-widget` 各一行） |
 | 5 | 宿主装载 | 启动 web 服务，读 stderr/stdout | 通过（只有一行 `dsh web: http://…`，无 loader 报错） |
 | 6 | 客户端 bundle 构建 | 拉 `/?token=…` 的 `__DSH_BOOT__`，再逐个 GET `plugins/??<id>/client.js` | 通过（见下表，全部 HTTP 200） |
 | 6b | 通知渲染进程 | 用 DSH 自带 Python 直接跑 `lib/popup.py`，喂 `{"cmd":"ping"}` | 通过（回 `{"cmd":"pong","visible":0}`，即 ctypes/分层窗口/numpy/PIL 全链路可导入） |
 | 7b | 通知的主题上报接口 | `GET /api/dsh-task-notify/theme` | 通过（HTTP 405 = 路由已注册、只收 POST；404 才代表没装上） |
+| 7b2 | 生图台宿主路由 | `POST /image-gen/studio` 用 GET 探（`405` = 路由在、只收 POST）；`GET /image-gen/file?path=<studio 目录里的真文件>` | 通过（405；真文件 **200 image/png**，缺失文件回插件自己的 JSON `{"ok":false,…}` → 可区分"路由没装上"与"文件不存在"） |
+| 7b3 | 生图插件自检 | 在包目录跑 `node tools/verify.mjs`（离线桩件，不联网、不碰会话） | 通过（**95 项通过 / 0 失败**：原话转发约定 + 生图台端到端回环） |
 | 7 | 投影注册 | `GET /api/dsh-session-cost/status` | 通过（HTTP 200，`ok: true`，`projectionKey: sessionCost`） |
 | 8 | 安装脚本 | `scripts/install.ps1` 装进全新 profile，再启动一次 | 通过（装完能起、能出 bundle） |
 | 9 | 卸载脚本 | `scripts/uninstall.ps1` / `uninstall.sh` | 通过（manifest 回到基线，`pnpm` 移除对应链接） |
@@ -44,25 +46,27 @@
 | 包 | bundle 下发 | 字节数 |
 | --- | --- | --- |
 | `dsh-theme-gemini-cat` | HTTP 200 | 1,467,939 |
+| `dsh-image-gen` | HTTP 200 | 94,301 |
 | `dsh-task-notify` | HTTP 200 | 4,623 |
 | `dsh-session-cost` | HTTP 200 | 67,495 |
 | `dsh-token-widget` | HTTP 200 | 542,599 |
 
-`__DSH_BOOT__` 里 73 个客户端条目全部进了 `batches`，四个包都在 `application` 批次的 URL 清单里
-（`…,dsh-token-widget/client.js,dsh-session-cost/client.js,dsh-task-notify/client.js,dsh-theme-gemini-cat/client.js,…`），
+`__DSH_BOOT__` 里 74 个客户端条目全部进了 `batches`，五个包都在 `application` 批次的 URL 清单里
+（`…,dsh-image-gen/client.js,dsh-token-widget/client.js,dsh-session-cost/client.js,dsh-task-notify/client.js,dsh-theme-gemini-cat/client.js,…`），
 即"构建完成且随首屏一起下发"，不是延迟加载失败。
 
 ## 依赖的 DSH 契约（升级时重点看这几处）
 
 | 契约 | 谁在用 | 断了会怎样 |
 | --- | --- | --- |
-| `dsh.bundle.patch` + bundle insert | 四个包 | 装载直接失败（插件页报错），最容易被发现 |
+| `dsh.bundle.patch` + bundle insert | 五个包 | 装载直接失败（插件页报错），最容易被发现 |
 | client slot `settings.general.item` | 美化包、余额挂件（`token-widget` 的找回入口） | 设置里那几行消失，其余功能正常 |
 | client slot（会话标题栏）`@deepseek-ai/dsh-client-ui-conversation` | 会话费用徽章 | 徽章不渲染 |
 | `ctx.sessionProjections.register` + 事件 `request/header` / `assistant/message` / `compaction/*` | 会话费用徽章 | 金额算不出来 → 徽章返回 null（不显示），不崩 |
 | DSH 客户端 class 名子串（`_sidebarCol` / `_centerCol` / `_composerSeat` / `_brandMark` …） | 美化包 | 部分外观失效（立绘/星屑/渐变不出现），功能不崩 |
 | 宿主 HTTP 路由注册 | 会话费用徽章自检口、任务通知主题上报口 | 那两个接口 404；徽章与弹窗照常 |
 | 会话事件 `turn/end`（含 `reason.kind`）与 `--dsw-*` 设计 token | 任务完成通知 | 不弹通知，或弹了但配色回落到内置默认值 |
+| 宿主 `webServer.register`（exact 路由）+ `ctx.commands.register` + `ctx.tools.register` | 生图（`/image-gen/*`、`/image`、`image_generate`） | 生图台读不到图 / 命令消失 / 模型看不到工具；装载本身不报错 |
 
 ## 已知的兼容边界
 

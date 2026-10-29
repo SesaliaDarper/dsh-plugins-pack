@@ -1,0 +1,66 @@
+{
+  "name": "dsh-image-gen",
+  "version": "2.1.0",
+  "private": false,
+  "description": "生图能力：image_generate 工具 + /image 命令 + 独立的「生图」页面（直接对生图模型提要求，不经对话模型）+ 「设置 → 生图」专区",
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./cordis.patch.yml": "./cordis.patch.yml",
+    "./package.json": "./package.json"
+  },
+  "icon": "./icon.svg",
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-settings",
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-api-remotes"
+      ],
+      "platform": "web"
+    }
+  },
+  "meta": {
+    "title": "生图（生图台 / image_generate / /image）",
+    "description": "给 DSH 加生图能力：一页独立的「生图台」（全局工作台，成图墙/参考图/灯箱），一个 /image 命令，一个给对话模型用的 image_generate 工具，以及「设置 → 生图」专区。接口地址与密钥引用名在设置里改，密钥值存 $DSH_HOME/.credentials.yaml。"
+  },
+  "files": [
+    "lib",
+    "tools",
+    "cordis.patch.yml",
+    "icon.svg",
+    "README.md"
+  ],
+  "engines": {
+    "dsh": ">=0.2.1-rc.2 <0.3.0"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "image",
+    "image-generation",
+    "gpt-image",
+    "studio"
+  ],
+  "author": "SesaliaDarper",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SesaliaDarper/dsh-plugins-pack.git",
+    "directory": "packages/dsh-image-gen"
+  },
+  "homepage": "https://github.com/SesaliaDarper/dsh-plugins-pack/tree/main/packages/dsh-image-gen#readme",
+  "bugs": {
+    "url": "https://github.com/SesaliaDarper/dsh-plugins-pack/issues"
+  }
+}

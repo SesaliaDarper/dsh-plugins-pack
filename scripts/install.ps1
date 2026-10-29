@@ -39,7 +39,7 @@ param(
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
-$AllPackages = @('dsh-token-widget', 'dsh-session-cost', 'dsh-task-notify', 'dsh-theme-gemini-cat')
+$AllPackages = @('dsh-image-gen', 'dsh-token-widget', 'dsh-session-cost', 'dsh-task-notify', 'dsh-theme-gemini-cat')
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 if (-not $DshHome -or $DshHome.Trim() -eq '') {
     if ($env:DSH_HOME) { $DshHome = $env:DSH_HOME } else { $DshHome = Join-Path $HOME '.dsh' }

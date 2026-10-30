@@ -1,3 +1,5 @@
+> **DSH 五件套之一** —— [← 回到总览](../README.md) · [兼容性记录](../COMPATIBILITY.md)
+
 # 美化包（dsh-theme-gemini-cat）
 
 给 DeepSeek Harness 的界面整套换装：**配色 + 侧栏角色立绘 + 极简对话背景 + 品牌标识 + 强调色**。

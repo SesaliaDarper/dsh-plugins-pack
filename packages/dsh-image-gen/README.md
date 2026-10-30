@@ -1,3 +1,5 @@
+> **DSH 五件套之一** —— [← 回到总览](../README.md) · [兼容性记录](../COMPATIBILITY.md)
+
 # dsh-image-gen
 
 给 DSH 加生图能力，三个入口：

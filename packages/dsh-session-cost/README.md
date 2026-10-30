@@ -1,3 +1,5 @@
+> **DSH 五件套之一** —— [← 回到总览](../README.md) · [兼容性记录](../COMPATIBILITY.md)
+
 # 会话费用徽章（dsh-session-cost）
 
 在 DSH 的**会话标题栏右侧工具区**放一枚小徽章，显示**本会话**在

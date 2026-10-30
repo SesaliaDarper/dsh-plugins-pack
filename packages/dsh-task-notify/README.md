@@ -1,3 +1,5 @@
+> **DSH 五件套之一** —— [← 回到总览](../README.md) · [兼容性记录](../COMPATIBILITY.md)
+
 # dsh-task-notify — 任务完成右下角通知
 
 DSH 每完成一轮对话，就在 Windows 右下角弹一条**跟随当前主题**的通知，带一张

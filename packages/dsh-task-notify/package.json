@@ -1,8 +1,8 @@
 {
   "name": "dsh-task-notify",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": false,
-  "description": "任务完成通知 — DSH 每完成一轮对话，就在 Windows 右下角弹一条跟随当前主题（含子主题）的通知，带角色立绘",
+  "description": "任务完成通知 — DSH 每完成一轮对话，就在 Windows 右下角弹一条跟随当前主题（含子主题）的通知，带角色立绘与提示音",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -25,7 +25,7 @@
   },
   "meta": {
     "title": "任务完成通知",
-    "description": "每轮结束时在 Windows 右下角弹一条跟随当前主题的通知：卡片配色取 DSH 当前设计 token，角色取当前主题插件的立绘，逐像素 alpha 圆角，6.5 秒自动消失，最多堆叠 4 条。"
+    "description": "每轮结束时在 Windows 右下角弹一条跟随当前主题的通知：卡片配色取 DSH 当前设计 token，角色取当前主题插件的立绘，带完成/失败/中止三种提示音，逐像素 alpha 圆角，6.5 秒自动消失，最多堆叠 4 条。另对外提供 taskNotify 服务，供生图台等不产生 turn/end 的长任务触发通知。"
   },
   "files": [
     "lib",

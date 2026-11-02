@@ -14,6 +14,9 @@ window.__ModuleLoader__.load({
 		const STORAGE_KEY = "dsh-theme-gemini-cat.selected";
 		const VEIL_KEY = "dsh-theme-gemini-cat.chatVeil";
 		const FROST_KEY = "dsh-theme-gemini-cat.chatFrost";
+		const ART_OPACITY_KEY = "dsh-theme-gemini-cat.artOpacity";
+		/** 立绘不透明度默认值：原版 .96，这里默认压到 0.55 让左下角文字更好读。 */
+		const DEFAULT_ART_OPACITY = 0.55;
 		/** 磨砂度滑条拉满时的模糊半径（px）。 */
 		const FROST_MAX_BLUR = 26;
 		/** 滑块 0..1：0 = 磨砂最厚（主题原本的值），1 = 完全没有磨砂。 */
@@ -1336,18 +1339,20 @@ window.__ModuleLoader__.load({
 
 		const OFF = { id: "", name: "默认配色", hint: "关闭自定义主题，界面回到原生" };
 
-		const CSS = "\n/* ===== Gemini猫猫 · 结构性外观 =====\n   所有外观规则都以 body[data-gc-theme] 为前提：\n   关掉自定义主题时整块失效，界面（含立绘 / 星屑 / logo / 按钮渐变）完全回到原生。 */\n\n/* --- 侧栏：星屑粒子 + 底部光晕 ---\n   星屑必须画在侧栏自己的定位层上（::before）。\n   直接给 [class*=\"_sidebarCol\"] 设 background-image 会被它内部那层不透明的\n   ._2H3hWW_root（ui-sidebar 给它的 background:var(--dsw-specific-sidebar-fill) + height:100%）\n   整块盖住；立绘是 ::after 定位层所以不受影响 —— 于是出现「有立绘、没星屑」。\n   darwin 上那层是透明的（background:0 0），只有 Windows 看得见这个问题。\n   ::before 同样是定位层且 z-index:0：压在侧栏底色之上、立绘与可交互行之下。 */\nbody[data-gc-theme] [class*=\"_sidebarCol\"] {\n  position: relative;\n}\nbody[data-gc-theme] [class*=\"_sidebarCol\"]::before {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  background-image: var(--gc-glow, none);\n  background-repeat: no-repeat;\n  background-position: center bottom;\n  pointer-events: none;\n  z-index: 0;\n}\nbody[data-gc-theme][data-ds-dark-theme] [class*=\"_sidebarCol\"]::before {\n  background-image: var(--gc-glow-dark, none);\n}\n\n/* --- 侧栏底部角色立绘 --- */\nbody[data-gc-theme] [class*=\"_sidebarCol\"]::after {\n  content: \"\";\n  position: absolute;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  height: 44%;\n  max-height: 330px;\n  background: var(--gc-art, none) bottom center / contain no-repeat;\n  pointer-events: none;\n  z-index: 0;\n  opacity: .96;\n  filter: drop-shadow(0 16px 30px var(--gc-art-shadow, rgba(75, 63, 158, .20)));\n  -webkit-mask-image: linear-gradient(to bottom, #000 66%, transparent 98%);\n  mask-image: linear-gradient(to bottom, #000 66%, transparent 98%);\n}\nbody[data-gc-theme][data-ds-dark-theme] [class*=\"_sidebarCol\"]::after {\n  filter: drop-shadow(0 16px 30px var(--gc-art-shadow-dark, rgba(0, 0, 0, .55)));\n}\n\n/* 立绘垫在可交互行之下 */\nbody [class*=\"_sidebarCol\"] [class*=\"_logoRow\"],\nbody [class*=\"_sidebarCol\"] [class*=\"_newSession\"],\nbody [class*=\"_sidebarCol\"] [class*=\"_panelList\"],\nbody [class*=\"_sidebarCol\"] [class*=\"_regionArea\"],\nbody [class*=\"_sidebarCol\"] [class*=\"_footArea\"],\nbody [class*=\"_sidebarCol\"] [class*=\"_settingsArea\"] {\n  position: relative;\n  z-index: 2;\n}\n\n/* --- 干掉列表底部的渐隐遮罩 ---\n   它是一条「渐变到不透明侧栏底色」的横条（absolute / 高 24px / 贴侧栏底部），\n   正好横切在立绘上：深色下看是黑框，浅色下看是粗白边。\n   选择器必须锁在侧栏内、并排除 _fadeTop/_fadeBottom：\n   [class*=\"_fade\"] 是子串匹配，chat 的思考折叠区容器同时挂\n   WW4l1q_body + WW4l1q_fadeTop/_fadeBottom，一旦被 display:none，\n   展开思考时面板会在「有滚动条↔无滚动条」之间反复闪断/抽搐。 */\nbody[data-gc-theme] [class*=\"_sidebarCol\"] [class*=\"_fade\"]:not([class*=\"_fadeTop\"]):not([class*=\"_fadeBottom\"]) {\n  display: none;\n}\n\n/* --- 品牌 logo 换成主题标识 --- */\nbody[data-gc-theme] [class*=\"_sidebarCol\"] [class*=\"_brandMark\"] svg {\n  display: none;\n}\nbody[data-gc-theme] [class*=\"_sidebarCol\"] [class*=\"_brandMark\"]::after {\n  content: \"\";\n  display: block;\n  width: 22px;\n  height: 22px;\n  background: var(--gc-logo, none) center / contain no-repeat;\n}\n\n/* --- 主按钮：虹彩渐变 ---\n   选择器必须收紧到「侧栏 root 的直接子元素」：\n   [class*=\"_newSession\"] 是子串匹配，会连带命中 _newSessionLabelMask /\n   _newSessionContent / _newSessionShortcut，给这些子元素也铺上渐变就是色块错乱。 */\nbody[data-gc-theme] [class*=\"_sidebarCol\"] [class*=\"_root\"]:not([class*=\"_collapsed\"]) > [class*=\"_newSession\"] {\n  background: linear-gradient(118deg, var(--gc-accent) 0%, var(--gc-accent-2) 52%, var(--gc-accent-3) 100%);\n  border: 0;\n  color: #fff;\n  box-shadow: 0 4px 14px var(--gc-shadow);\n}\n/* 原生 :hover 用 shorthand 重置了 background、特异性又高于普通规则，\n   不显式覆盖的话悬停时渐变会整块消失、露出底色。 */\nbody[data-gc-theme] [class*=\"_sidebarCol\"] [class*=\"_root\"]:not([class*=\"_collapsed\"]) > [class*=\"_newSession\"]:hover {\n  background: linear-gradient(118deg, var(--gc-accent-h) 0%, var(--gc-accent-2-h) 52%, var(--gc-accent-3-h) 100%);\n  box-shadow: 0 7px 20px var(--gc-shadow-h);\n}\nbody[data-gc-theme] [class*=\"_sidebarCol\"] [class*=\"_root\"] > [class*=\"_newSession\"] svg {\n  color: #fff;\n}\n\n/* --- 主区顶部虹彩发丝线 --- */\nbody[data-gc-theme] [class*=\"_centerCol\"] {\n  position: relative;\n}\nbody[data-gc-theme] [class*=\"_centerCol\"]::before {\n  content: \"\";\n  position: absolute;\n  left: 0;\n  right: 0;\n  top: 0;\n  height: 1px;\n  background: var(--gc-hairline, linear-gradient(90deg,\n    transparent,\n    rgba(134, 227, 240, .60) 18%,\n    rgba(124, 107, 224, .72) 46%,\n    rgba(228, 184, 240, .60) 74%,\n    transparent));\n  pointer-events: none;\n  z-index: 6;\n}\n\n/* --- 侧栏选中态 --- */\nbody[data-gc-theme] [class*=\"_panelRow\"][aria-current],\nbody[data-gc-theme] [class*=\"_panelRow\"][data-active] {\n  background: var(--dsw-specific-sidebar-nav-item-active);\n}\n\n/* --- 滚动条染成主题色 --- */\nbody[data-gc-theme] {\n  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l1);\n  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l1);\n}\n\n/* --- 会话区背景：聊天背景图 + 两根独立滑条 ---\n   图和磨砂一起画在会话列的 ::after 上（而不是元素自身背景）：\n   这样「背景磨砂度」用的 filter: blur() 只会糊这张图，不会把正文文字一起糊掉。\n   ::after 走 z-index:-1：靠会话列自己成为层叠上下文（position:relative + z-index:0），\n   于是它压在会话列底色之上、所有正文内容之下。\n   transform: scale(1.04) 是把 blur 在四边溢出的虚边推出可视区；\n   会话列自带 overflow:hidden，多出来的部分会被裁掉，不会留暗边。 */\nbody[data-gc-theme] [class*=\"_centerCol\"] {\n  position: relative;\n  z-index: 0;\n  background-color: transparent;\n  background-image: none;\n}\nbody[data-gc-theme] [class*=\"_centerCol\"]::after {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  z-index: -1;\n  pointer-events: none;\n  transform: scale(1.04);\n  /* 遮罩层 = 主题色 + --gc-chat-veil（透明度滑条） × --gc-chat-frost（磨砂度滑条，0 = 完全不遮） */\n  background-image:\n    linear-gradient(rgba(var(--gc-chat-veil-color, 255,255,255), calc(var(--gc-chat-veil, .6) * var(--gc-chat-frost, 0))),\n                    rgba(var(--gc-chat-veil-color, 255,255,255), calc(var(--gc-chat-veil, .6) * var(--gc-chat-frost, 0)))),\n    var(--gc-chat-bg, none);\n  background-repeat: no-repeat, no-repeat;\n  background-size: auto, cover;\n  /* 角色在画面右侧：窄窗口 cover 裁切时把取景框往右压，保证她不被裁掉 */\n  background-position: center center, 86% 55%;\n  /* 「背景磨砂度」滑块写进来的模糊半径（0px = 不额外模糊） */\n  filter: blur(var(--gc-chat-frost-blur, 0px));\n}\nbody[data-gc-theme][data-ds-dark-theme] [class*=\"_centerCol\"]::after {\n  background-image:\n    linear-gradient(rgba(var(--gc-chat-veil-color-dark, 9,11,20), calc(var(--gc-chat-veil-dark, .72) * var(--gc-chat-frost, 0))),\n                    rgba(var(--gc-chat-veil-color-dark, 9,11,20), calc(var(--gc-chat-veil-dark, .72) * var(--gc-chat-frost, 0)))),\n    var(--gc-chat-bg-dark, var(--gc-chat-bg, none));\n}\n/* 输入区「座」：原生那条「36px 内渐变到不透明 bg-base」的横切去掉 —— 那是下半条硬切 */\nbody[data-gc-theme] [class*=\"_composerSeat\"] {\n  background: none;\n}/* --- 对话背景透明度滑块（设置行内） --- */\n.gcVeil {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  margin-top: 2px;\n}\n.gcVeilLabel {\n  flex: none;\n  font-size: 12.5px;\n  color: var(--dsw-alias-label-secondary);\n}\n.gcRange {\n  flex: 1;\n  min-width: 120px;\n  height: 18px;\n  accent-color: var(--gc-accent, #6C5CE7);\n  cursor: pointer;\n}\n.gcVeilValue {\n  flex: none;\n  min-width: 40px;\n  text-align: right;\n  font-size: 12px;\n  font-variant-numeric: tabular-nums;\n  color: var(--dsw-alias-label-tertiary);\n}\nbody[data-gc-theme] [class*=\"_centerCol\"] [class*=\"_root\"][data-phase] {\n  background-color: transparent;\n  background-image: none;\n}\n\n/* ===== 设置行：自定义主题选择器（不随主题开关，始终可用） ===== */\n.gcRow { display: flex; flex-direction: column; gap: 11px; padding: 2px 0; }\n.gcTitle {\n  font-size: 13px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-primary);\n}\n.gcChips { display: flex; flex-wrap: wrap; gap: 8px; }\n.gcChip {\n  display: inline-flex;\n  align-items: center;\n  gap: 7px;\n  height: 34px;\n  padding: 0 14px;\n  border-radius: 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: var(--dsw-alias-bg-layer-2);\n  color: var(--dsw-alias-label-secondary);\n  font-family: inherit;\n  font-size: 12.5px;\n  cursor: pointer;\n  transition: background .15s ease, border-color .15s ease, color .15s ease;\n}\n.gcChip:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n  color: var(--dsw-alias-label-primary);\n}\n.gcChipOn {\n  background: var(--gc-chip-on-bg, linear-gradient(118deg, #6C5CE7 0%, #8B7BEE 52%, #B9A6F2 100%));\n  border-color: transparent;\n  color: #fff;\n  box-shadow: 0 3px 10px var(--gc-chip-on-shadow, rgba(108, 92, 231, .32));\n}\n.gcChipOn:hover { color: #fff; }\n.gcDot {\n  width: 9px; height: 9px;\n  flex: 0 0 9px;\n  border-radius: 50%;\n  background: var(--gc-dot, linear-gradient(135deg, #86E3F0, #B9A6F2 55%, #E4B8F0));\n}\n.gcChipOn .gcDot { background: #fff; }\n.gcHint { font-size: 11.5px; color: var(--dsw-alias-label-tertiary); }\n";
+		const CSS = "\n/* ===== Gemini猫猫 · 结构性外观 =====\n   所有外观规则都以 body[data-gc-theme] 为前提：\n   关掉自定义主题时整块失效，界面（含立绘 / 星屑 / logo / 按钮渐变）完全回到原生。 */\n\n/* --- 侧栏：星屑粒子 + 底部光晕 ---\n   星屑必须画在侧栏自己的定位层上（::before）。\n   直接给 [class*=\"_sidebarCol\"] 设 background-image 会被它内部那层不透明的\n   ._2H3hWW_root（ui-sidebar 给它的 background:var(--dsw-specific-sidebar-fill) + height:100%）\n   整块盖住；立绘是 ::after 定位层所以不受影响 —— 于是出现「有立绘、没星屑」。\n   darwin 上那层是透明的（background:0 0），只有 Windows 看得见这个问题。\n   ::before 同样是定位层且 z-index:0：压在侧栏底色之上、立绘与可交互行之下。 */\nbody[data-gc-theme] [class*=\"_sidebarCol\"] {\n  position: relative;\n}\nbody[data-gc-theme] [class*=\"_sidebarCol\"]::before {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  background-image: var(--gc-glow, none);\n  background-repeat: no-repeat;\n  background-position: center bottom;\n  pointer-events: none;\n  z-index: 0;\n}\nbody[data-gc-theme][data-ds-dark-theme] [class*=\"_sidebarCol\"]::before {\n  background-image: var(--gc-glow-dark, none);\n}\n\n/* --- 侧栏底部角色立绘 --- */\nbody[data-gc-theme] [class*=\"_sidebarCol\"]::after {\n  content: \"\";\n  position: absolute;\n  left: 0;\n  right: 0;\n  bottom: 0;\n  height: 44%;\n  max-height: 330px;\n  background: var(--gc-art, none) bottom center / contain no-repeat;\n  pointer-events: none;\n  z-index: 0;\n  /* 立绘不透明度：由设置行滑块写入 --gc-art-opacity，默认 0.55（原版 .96） */\n  opacity: var(--gc-art-opacity, .55);\n  filter: drop-shadow(0 16px 30px var(--gc-art-shadow, rgba(75, 63, 158, .20)));\n  -webkit-mask-image: linear-gradient(to bottom, #000 66%, transparent 98%);\n  mask-image: linear-gradient(to bottom, #000 66%, transparent 98%);\n}\nbody[data-gc-theme][data-ds-dark-theme] [class*=\"_sidebarCol\"]::after {\n  filter: drop-shadow(0 16px 30px var(--gc-art-shadow-dark, rgba(0, 0, 0, .55)));\n}\n\n/* 立绘垫在可交互行之下 */\nbody [class*=\"_sidebarCol\"] [class*=\"_logoRow\"],\nbody [class*=\"_sidebarCol\"] [class*=\"_newSession\"],\nbody [class*=\"_sidebarCol\"] [class*=\"_panelList\"],\nbody [class*=\"_sidebarCol\"] [class*=\"_regionArea\"],\nbody [class*=\"_sidebarCol\"] [class*=\"_footArea\"],\nbody [class*=\"_sidebarCol\"] [class*=\"_settingsArea\"] {\n  position: relative;\n  z-index: 2;\n}\n\n/* --- 干掉列表底部的渐隐遮罩 ---\n   它是一条「渐变到不透明侧栏底色」的横条（absolute / 高 24px / 贴侧栏底部），\n   正好横切在立绘上：深色下看是黑框，浅色下看是粗白边。\n   选择器必须锁在侧栏内、并排除 _fadeTop/_fadeBottom：\n   [class*=\"_fade\"] 是子串匹配，chat 的思考折叠区容器同时挂\n   WW4l1q_body + WW4l1q_fadeTop/_fadeBottom，一旦被 display:none，\n   展开思考时面板会在「有滚动条↔无滚动条」之间反复闪断/抽搐。 */\nbody[data-gc-theme] [class*=\"_sidebarCol\"] [class*=\"_fade\"]:not([class*=\"_fadeTop\"]):not([class*=\"_fadeBottom\"]) {\n  display: none;\n}\n\n/* --- 品牌 logo 换成主题标识 --- */\nbody[data-gc-theme] [class*=\"_sidebarCol\"] [class*=\"_brandMark\"] svg {\n  display: none;\n}\nbody[data-gc-theme] [class*=\"_sidebarCol\"] [class*=\"_brandMark\"]::after {\n  content: \"\";\n  display: block;\n  width: 22px;\n  height: 22px;\n  background: var(--gc-logo, none) center / contain no-repeat;\n}\n\n/* --- 主按钮：虹彩渐变 ---\n   选择器必须收紧到「侧栏 root 的直接子元素」：\n   [class*=\"_newSession\"] 是子串匹配，会连带命中 _newSessionLabelMask /\n   _newSessionContent / _newSessionShortcut，给这些子元素也铺上渐变就是色块错乱。 */\nbody[data-gc-theme] [class*=\"_sidebarCol\"] [class*=\"_root\"]:not([class*=\"_collapsed\"]) > [class*=\"_newSession\"] {\n  background: linear-gradient(118deg, var(--gc-accent) 0%, var(--gc-accent-2) 52%, var(--gc-accent-3) 100%);\n  border: 0;\n  color: #fff;\n  box-shadow: 0 4px 14px var(--gc-shadow);\n}\n/* 原生 :hover 用 shorthand 重置了 background、特异性又高于普通规则，\n   不显式覆盖的话悬停时渐变会整块消失、露出底色。 */\nbody[data-gc-theme] [class*=\"_sidebarCol\"] [class*=\"_root\"]:not([class*=\"_collapsed\"]) > [class*=\"_newSession\"]:hover {\n  background: linear-gradient(118deg, var(--gc-accent-h) 0%, var(--gc-accent-2-h) 52%, var(--gc-accent-3-h) 100%);\n  box-shadow: 0 7px 20px var(--gc-shadow-h);\n}\nbody[data-gc-theme] [class*=\"_sidebarCol\"] [class*=\"_root\"] > [class*=\"_newSession\"] svg {\n  color: #fff;\n}\n\n/* --- 主区顶部虹彩发丝线 --- */\nbody[data-gc-theme] [class*=\"_centerCol\"] {\n  position: relative;\n}\nbody[data-gc-theme] [class*=\"_centerCol\"]::before {\n  content: \"\";\n  position: absolute;\n  left: 0;\n  right: 0;\n  top: 0;\n  height: 1px;\n  background: var(--gc-hairline, linear-gradient(90deg,\n    transparent,\n    rgba(134, 227, 240, .60) 18%,\n    rgba(124, 107, 224, .72) 46%,\n    rgba(228, 184, 240, .60) 74%,\n    transparent));\n  pointer-events: none;\n  z-index: 6;\n}\n\n/* --- 侧栏选中态 --- */\nbody[data-gc-theme] [class*=\"_panelRow\"][aria-current],\nbody[data-gc-theme] [class*=\"_panelRow\"][data-active] {\n  background: var(--dsw-specific-sidebar-nav-item-active);\n}\n\n/* --- 滚动条染成主题色 --- */\nbody[data-gc-theme] {\n  --dsh-scrollbar-thumb: var(--dsw-alias-scrollbar-bg-l1);\n  --dsh-scrollbar-thumb-hover: var(--dsw-alias-scrollbar-hover-l1);\n}\n\n/* --- 会话区背景：聊天背景图 + 两根独立滑条 ---\n   图和磨砂一起画在会话列的 ::after 上（而不是元素自身背景）：\n   这样「背景磨砂度」用的 filter: blur() 只会糊这张图，不会把正文文字一起糊掉。\n   ::after 走 z-index:-1：靠会话列自己成为层叠上下文（position:relative + z-index:0），\n   于是它压在会话列底色之上、所有正文内容之下。\n   transform: scale(1.04) 是把 blur 在四边溢出的虚边推出可视区；\n   会话列自带 overflow:hidden，多出来的部分会被裁掉，不会留暗边。 */\nbody[data-gc-theme] [class*=\"_centerCol\"] {\n  position: relative;\n  z-index: 0;\n  background-color: transparent;\n  background-image: none;\n}\nbody[data-gc-theme] [class*=\"_centerCol\"]::after {\n  content: \"\";\n  position: absolute;\n  inset: 0;\n  z-index: -1;\n  pointer-events: none;\n  transform: scale(1.04);\n  /* 遮罩层 = 主题色 + --gc-chat-veil（透明度滑条） × --gc-chat-frost（磨砂度滑条，0 = 完全不遮） */\n  background-image:\n    linear-gradient(rgba(var(--gc-chat-veil-color, 255,255,255), calc(var(--gc-chat-veil, .6) * var(--gc-chat-frost, 0))),\n                    rgba(var(--gc-chat-veil-color, 255,255,255), calc(var(--gc-chat-veil, .6) * var(--gc-chat-frost, 0)))),\n    var(--gc-chat-bg, none);\n  background-repeat: no-repeat, no-repeat;\n  background-size: auto, cover;\n  /* 角色在画面右侧：窄窗口 cover 裁切时把取景框往右压，保证她不被裁掉 */\n  background-position: center center, 86% 55%;\n  /* 「背景磨砂度」滑块写进来的模糊半径（0px = 不额外模糊） */\n  filter: blur(var(--gc-chat-frost-blur, 0px));\n}\nbody[data-gc-theme][data-ds-dark-theme] [class*=\"_centerCol\"]::after {\n  background-image:\n    linear-gradient(rgba(var(--gc-chat-veil-color-dark, 9,11,20), calc(var(--gc-chat-veil-dark, .72) * var(--gc-chat-frost, 0))),\n                    rgba(var(--gc-chat-veil-color-dark, 9,11,20), calc(var(--gc-chat-veil-dark, .72) * var(--gc-chat-frost, 0)))),\n    var(--gc-chat-bg-dark, var(--gc-chat-bg, none));\n}\n/* 输入区「座」：原生那条「36px 内渐变到不透明 bg-base」的横切去掉 —— 那是下半条硬切 */\nbody[data-gc-theme] [class*=\"_composerSeat\"] {\n  background: none;\n}/* --- 对话背景透明度滑块（设置行内） --- */\n.gcVeil {\n  display: flex;\n  align-items: center;\n  gap: 10px;\n  margin-top: 2px;\n}\n.gcVeilLabel {\n  flex: none;\n  font-size: 12.5px;\n  color: var(--dsw-alias-label-secondary);\n}\n.gcRange {\n  flex: 1;\n  min-width: 120px;\n  height: 18px;\n  accent-color: var(--gc-accent, #6C5CE7);\n  cursor: pointer;\n}\n.gcVeilValue {\n  flex: none;\n  min-width: 40px;\n  text-align: right;\n  font-size: 12px;\n  font-variant-numeric: tabular-nums;\n  color: var(--dsw-alias-label-tertiary);\n}\nbody[data-gc-theme] [class*=\"_centerCol\"] [class*=\"_root\"][data-phase] {\n  background-color: transparent;\n  background-image: none;\n}\n\n/* ===== 设置行：自定义主题选择器（不随主题开关，始终可用） ===== */\n.gcRow { display: flex; flex-direction: column; gap: 11px; padding: 2px 0; }\n.gcTitle {\n  font-size: 13px;\n  font-weight: 500;\n  color: var(--dsw-alias-label-primary);\n}\n.gcChips { display: flex; flex-wrap: wrap; gap: 8px; }\n.gcChip {\n  display: inline-flex;\n  align-items: center;\n  gap: 7px;\n  height: 34px;\n  padding: 0 14px;\n  border-radius: 10px;\n  border: 1px solid var(--dsw-alias-border-l2);\n  background: var(--dsw-alias-bg-layer-2);\n  color: var(--dsw-alias-label-secondary);\n  font-family: inherit;\n  font-size: 12.5px;\n  cursor: pointer;\n  transition: background .15s ease, border-color .15s ease, color .15s ease;\n}\n.gcChip:hover {\n  background: var(--dsw-alias-interactive-bg-hover);\n  border-color: var(--dsw-alias-border-l3);\n  color: var(--dsw-alias-label-primary);\n}\n.gcChipOn {\n  background: var(--gc-chip-on-bg, linear-gradient(118deg, #6C5CE7 0%, #8B7BEE 52%, #B9A6F2 100%));\n  border-color: transparent;\n  color: #fff;\n  box-shadow: 0 3px 10px var(--gc-chip-on-shadow, rgba(108, 92, 231, .32));\n}\n.gcChipOn:hover { color: #fff; }\n.gcDot {\n  width: 9px; height: 9px;\n  flex: 0 0 9px;\n  border-radius: 50%;\n  background: var(--gc-dot, linear-gradient(135deg, #86E3F0, #B9A6F2 55%, #E4B8F0));\n}\n.gcChipOn .gcDot { background: #fff; }\n.gcHint { font-size: 11.5px; color: var(--dsw-alias-label-tertiary); }\n";
 
 		const zh = {
 			"row.title": "自定义主题",
 			"row.veil": "对话背景透明度",
 			"row.frost": "背景磨砂度",
+			"row.art": "立绘不透明度",
 			"row.hint": "整套换装：配色、侧栏立绘、对话背景与品牌标识。可选 Gemini猫猫 / GLM / Grok娘 / GPT娘 / Claude娘。对话背景走极简路线：纯色底 + 角色纹样淡色水印 + 右侧立绘，浅色 / 深色各一套，正文对比度已按无障碍标准校核。「背景磨砂度」0% = 背景完全不磨砂（既不遮也不糊），越往右越糊；「对话背景透明度」决定磨砂最浓时能遮住多少。"
 		};
 		const en = {
 			"row.title": "Custom theme",
 			"row.veil": "Chat background transparency",
 			"row.frost": "Background frost",
+			"row.art": "Sidebar art opacity",
 			"row.hint": "Full re-skin: palette, sidebar art, chat background and brand mark. Pick Gemini Cat / GLM / Grok / GPT / Claude. Chat backgrounds are minimal by design: flat base + the character's own motif as a pale watermark + her art at the right edge, with a separate light and dark version, both checked for text contrast. Background frost at 0% applies no frost at all (no veil, no blur); drag it right to frost more. The transparency slider caps how much the frost covers."
 		};
 
@@ -1385,6 +1390,21 @@ window.__ModuleLoader__.load({
 
 		function writeSavedFrost(value) {
 			try { window.localStorage.setItem(FROST_KEY, String(value)); } catch { /* 隐私模式忽略 */ }
+		}
+
+		/** 读/写「立绘不透明度」（0..1；越小越透）。 */
+		function readSavedArtOpacity() {
+			try {
+				const raw = window.localStorage.getItem(ART_OPACITY_KEY);
+				const value = raw === null ? DEFAULT_ART_OPACITY : Number(raw);
+				return isFinite(value) ? Math.max(0, Math.min(1, value)) : DEFAULT_ART_OPACITY;
+			} catch {
+				return DEFAULT_ART_OPACITY;
+			}
+		}
+
+		function writeSavedArtOpacity(value) {
+			try { window.localStorage.setItem(ART_OPACITY_KEY, String(value)); } catch { /* 隐私模式忽略 */ }
 		}
 
 		/** 读/写「对话背景透明度」滑块。 */
@@ -1446,17 +1466,19 @@ window.__ModuleLoader__.load({
 		 * 样式表里所有外观规则都以 body[data-gc-theme] 为前提，
 		 * 所以关掉主题 = 移除标记 + 清掉变量，立绘 / 星屑 / logo 一并消失，回到原生。
 		 */
-		function applyAssets(theme, veil, frost) {
+		function applyAssets(theme, veil, frost, artOpacity) {
 			if (typeof document === "undefined") return;
 			const root = document.documentElement;
 			const body = document.body;
 			if (theme === null) {
 				if (body) body.removeAttribute("data-gc-theme");
 				THEMES.forEach((t) => Object.keys(t.vars || {}).forEach((k) => root.style.removeProperty(k)));
+				root.style.removeProperty("--gc-art-opacity");
 				["--gc-chat-veil", "--gc-chat-veil-dark", "--gc-chat-frost", "--gc-chat-frost-blur"].forEach((k) => root.style.removeProperty(k));
 				return;
 			}
 			if (body) body.setAttribute("data-gc-theme", theme.id);
+			root.style.setProperty("--gc-art-opacity", String(typeof artOpacity === "number" ? Math.max(0, Math.min(1, artOpacity)) : DEFAULT_ART_OPACITY));
 			const vars = theme.vars || {};
 			Object.keys(vars).forEach((k) => root.style.setProperty(k, vars[k]));
 			const veilValues = veilVars(theme, veil);
@@ -1471,10 +1493,10 @@ window.__ModuleLoader__.load({
 		 * overrideTokens 是「同 source 整体替换」语义，换主题直接再调一次即可；
 		 * 传空对象等于关掉本层，内置浅色 / 深色仍然完整可用。
 		 */
-		function applyTheme(ctx, themeId, veil, frost) {
+		function applyTheme(ctx, themeId, veil, frost, artOpacity) {
 			const theme = findTheme(themeId);
 			ctx.theme.overrideTokens(PLUGIN_ID, theme === null ? {} : theme.tokens);
-			applyAssets(theme, veil, frost);
+			applyAssets(theme, veil, frost, artOpacity);
 		}
 
 		/** 设置行组件：一排主题按钮 + 对话背景透明度滑块。 */
@@ -1484,6 +1506,8 @@ window.__ModuleLoader__.load({
 			const veil = props.useStore((s) => s.chatVeil);
 			const frost = props.useStore((s) => s.chatFrost);
 			const veilPercent = Math.round((typeof veil === "number" ? veil : 0.5) * 100);
+			const artOpacity = props.useStore((s) => s.artOpacity);
+			const artPercent = Math.round((typeof artOpacity === "number" ? artOpacity : DEFAULT_ART_OPACITY) * 100);
 			const frostPercent = Math.round((typeof frost === "number" ? frost : 0) * 100);
 			const options = [OFF].concat(THEMES);
 			return React.createElement("div", { className: "gcRow" },
@@ -1529,6 +1553,20 @@ window.__ModuleLoader__.load({
 					}),
 					React.createElement("span", { className: "gcVeilValue" }, frostPercent + "%")
 				),
+								React.createElement("div", { className: "gcVeil" },
+					React.createElement("span", { className: "gcVeilLabel" }, t("row.art")),
+					React.createElement("input", {
+						type: "range",
+						min: "0",
+						max: "100",
+						step: "1",
+						className: "gcRange",
+						value: String(artPercent),
+						"aria-label": t("row.art"),
+						onChange: (event) => { props.setArtOpacity(Number(event.target.value) / 100); }
+					}),
+					React.createElement("span", { className: "gcVeilValue" }, artPercent + "%")
+				),
 				React.createElement("div", { className: "gcHint" }, t("row.hint"))
 			);
 		}
@@ -1536,28 +1574,35 @@ window.__ModuleLoader__.load({
 		/** 设置行的状态：当前选中的主题 id。写入动作同时负责落盘与换层。 */
 		function createRowStore(ctx) {
 			return store.defineStore({
-				init: () => ({ themeId: readSaved(), chatVeil: readSavedVeil(), chatFrost: readSavedFrost() }),
+				init: () => ({ themeId: readSaved(), chatVeil: readSavedVeil(), chatFrost: readSavedFrost(), artOpacity: readSavedArtOpacity() }),
 				actions: {
 					select: (d, id) => {
 						const next = id === "" ? "" : (findTheme(id) === null ? "" : id);
 						if (d.themeId === next) return;
 						d.themeId = next;
 						writeSaved(next);
-						applyTheme(ctx, next, d.chatVeil, d.chatFrost);
+						applyTheme(ctx, next, d.chatVeil, d.chatFrost, d.artOpacity);
 					},
 					setVeil: (d, value) => {
 						const next = Math.max(0, Math.min(1, Number(value) || 0));
 						if (d.chatVeil === next) return;
 						d.chatVeil = next;
 						writeSavedVeil(next);
-						applyTheme(ctx, d.themeId, next, d.chatFrost);
+						applyTheme(ctx, d.themeId, next, d.chatFrost, d.artOpacity);
 					},
 					setFrost: (d, value) => {
 					const f = Math.max(0, Math.min(1, Number(value) || 0));
 					if (d.chatFrost === f) return;
 					d.chatFrost = f;
 					writeSavedFrost(f);
-					applyTheme(ctx, d.themeId, d.chatVeil, f);
+					applyTheme(ctx, d.themeId, d.chatVeil, f, d.artOpacity);
+					},
+					setArtOpacity: (d, value) => {
+					const a = Math.max(0, Math.min(1, Number(value) || 0));
+					if (d.artOpacity === a) return;
+					d.artOpacity = a;
+					writeSavedArtOpacity(a);
+					applyTheme(ctx, d.themeId, d.chatVeil, d.chatFrost, a);
 					}
 				}
 			});
@@ -1568,7 +1613,7 @@ window.__ModuleLoader__.load({
 		function apply(ctx) {
 			installStyles(ctx);
 			ctx.effect(() => {
-				applyTheme(ctx, readSaved(), readSavedVeil(), readSavedFrost());
+				applyTheme(ctx, readSaved(), readSavedVeil(), readSavedFrost(), readSavedArtOpacity());
 				return () => { applyAssets(null); };
 			}, "gemini-cat: theme layer");
 
@@ -1584,7 +1629,8 @@ window.__ModuleLoader__.load({
 					inject: (actions) => ({
 						select: (id) => { actions.select(id); },
 						setVeil: (value) => { actions.setVeil(value); },
-						setFrost: (value) => { actions.setFrost(value); }
+						setFrost: (value) => { actions.setFrost(value); },
+						setArtOpacity: (value) => { actions.setArtOpacity(value); }
 					})
 				}, ThemePickerRow));
 			});

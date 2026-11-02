@@ -1,6 +1,6 @@
 {
   "name": "dsh-image-gen",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "private": false,
   "description": "生图能力：image_generate 工具 + /image 命令 + 独立的「生图」页面（直接对生图模型提要求，不经对话模型）+ 「设置 → 生图」专区",
   "type": "module",

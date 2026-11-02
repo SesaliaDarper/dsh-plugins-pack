@@ -82,6 +82,9 @@ window.__ModuleLoader__.load({
 		/** 成图墙最多留多少张（localStorage 里只存路径，不存字节）。 */
 		const GALLERY_LIMIT = 24;
 
+		/** 历史记录最多留多少条（只存提示词与图片路径，点一下能拉回来）。 */
+		const HISTORY_LIMIT = 60;
+
 		/** `/image` 结果里的哨兵行前缀，必须与 Host 的 RESULT_SENTINEL 一致。 */
 		const RESULT_SENTINEL = "@@image-gen";
 
@@ -194,6 +197,21 @@ window.__ModuleLoader__.load({
 			"studio.browseHint": "点任意一张放大，←/→ 翻看，Esc 关闭。",
 			"studio.willSend": "将发送",
 			"studio.promptLabel": "提示词",
+			"studio.history": "历史记录",
+			"studio.historyEmpty": "还没有历史记录。每次出图都会记一条，点一下能把提示词和当时用的参考图拉回来。",
+			"studio.historyHint": "点一条：提示词与当时用的参考图回填到工作台；参考图路径有效才恢复。",
+			"studio.historyClear": "清空历史",
+			"studio.historyClearConfirm": "再点一次清空",
+			"studio.historyImageGone": "提示词已回填；原图路径已失效。",
+			"studio.historyNoRefs": "提示词已回填；这条记录是文生图，没有参考图。",
+			"studio.historyRefsRestored": "已拉回 {n} 张参考图。",
+			"studio.historyRefsPartial": "{n} 张参考图原路径已失效，其余已拉回。",
+			"studio.historyRefsGone": "参考图原路径都已失效，只回填了提示词。",
+			"studio.historyExpand": "展开",
+			"studio.historyCollapse": "收起",
+			"studio.historyMissing": "原图不在原路径",
+			"studio.historyCount": "{n} 条",
+			"studio.historyFiles": "{n} 张",
 		};
 
 		const en = {
@@ -303,6 +321,22 @@ window.__ModuleLoader__.load({
 			"studio.browseHint": "Click any image to enlarge, ←/→ to browse, Esc to close.",
 			"studio.willSend": "Will send",
 			"studio.promptLabel": "Prompt",
+			"studio.history": "History",
+			"studio.historyEmpty":
+				"No history yet. Every generation is recorded here — click one to pull its prompt and the reference images it used back.",
+			"studio.historyHint": "Click an entry to refill the prompt and its reference images; a reference is restored only if its path is still valid.",
+			"studio.historyClear": "Clear history",
+			"studio.historyClearConfirm": "Click again to clear",
+			"studio.historyImageGone": "Prompt restored — the image’s original path is gone.",
+			"studio.historyNoRefs": "Prompt restored — this entry was text-to-image and had no reference images.",
+			"studio.historyRefsRestored": "Restored {n} reference image(s).",
+			"studio.historyRefsPartial": "{n} reference image(s) had stale paths; the rest were restored.",
+			"studio.historyRefsGone": "All reference images’ paths are gone; only the prompt was restored.",
+			"studio.historyExpand": "Expand",
+			"studio.historyCollapse": "Collapse",
+			"studio.historyMissing": "Image missing at its original path",
+			"studio.historyCount": "{n} entries",
+			"studio.historyFiles": "{n} image(s)",
 		};
 
 		/* ─────────────────────────── 样式 ─────────────────────────── */
@@ -390,6 +424,31 @@ window.__ModuleLoader__.load({
 .ig2-example { font: inherit; font-size: 11px; color: inherit; background: transparent; cursor: pointer;
   border: 1px solid color-mix(in srgb, currentColor 15%, transparent); border-radius: 999px; padding: 3px 9px; opacity: .7; }
 .ig2-example:hover { opacity: 1; border-color: color-mix(in srgb, currentColor 38%, transparent); }
+
+/* 历史记录：每次出图一条，点一下回填提示词并尽量打开原图。 */
+.ig2-history { order: 1; display: flex; flex-direction: column; gap: 8px; padding-top: 4px;
+  border-top: 1px solid color-mix(in srgb, currentColor 8%, transparent); }
+.ig2-histHead { margin: 0; }
+.ig2-histToggle { display: inline-flex; align-items: center; gap: 6px; font: inherit; font-size: 13px;
+  font-weight: 600; color: inherit; background: none; border: none; padding: 2px 0; cursor: pointer; opacity: .82; }
+.ig2-histToggle:hover { opacity: 1; }
+.ig2-histList { display: flex; flex-direction: column; gap: 4px; max-height: 320px; overflow-y: auto;
+  padding-right: 2px; }
+.ig2-histRow { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px;
+  font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 9px;
+  border: 1px solid color-mix(in srgb, currentColor 10%, transparent);
+  background: color-mix(in srgb, currentColor 2.5%, transparent); }
+.ig2-histRow:hover { border-color: color-mix(in srgb, currentColor 30%, transparent);
+  background: color-mix(in srgb, currentColor 6%, transparent); }
+.ig2-histThumb { flex: none; width: 42px; height: 42px; border-radius: 7px; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+  background: color-mix(in srgb, currentColor 5%, transparent); }
+.ig2-histThumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ig2-histThumbMissing { font-size: 11px; opacity: .4; }
+.ig2-histBody { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ig2-histPrompt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12.5px; }
+.ig2-histMeta { font-size: 10.5px; opacity: .5; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 灯箱：点成图就地放大，←/→ 翻页，Esc 关闭 */
 .ig2-lightbox { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center;
@@ -640,6 +699,12 @@ window.__ModuleLoader__.load({
 								? file.type
 								: "image/png",
 						name: typeof file.name === "string" ? file.name : undefined,
+						// Electron 里拖入/选中的文件常带绝对路径；浏览器里可能是 undefined。
+						// 有路径就能让历史记录直接引用原图，没有就交给宿主落一份副本。
+						path:
+							typeof file.path === "string" && file.path.length > 0
+								? file.path
+								: undefined,
 					});
 				};
 				reader.onerror = () => reject(reader.error ?? new Error("read failed"));
@@ -739,8 +804,27 @@ window.__ModuleLoader__.load({
 			return studioUrl(`${STUDIO_FILE_ROUTE}?path=${encodeURIComponent(filePath)}`);
 		}
 
+		/**
+		 * 历史记录里的图片还能不能打开？
+		 *
+		 * 历史只记路径，不存字节 —— 用户可能挪了目录、删了文件、或改了「生图台目录」。
+		 * 这种情况只回填提示词，不去渲染一张必然 404 的图。
+		 * 没有 `Image`（离线自检）时乐观放行：真正的 onError 兜底在 `<img>` 上。
+		 */
+		function probeStudioImage(url) {
+			if (url === undefined) return Promise.resolve(false);
+			if (typeof Image !== "function") return Promise.resolve(true);
+			return new Promise((resolve) => {
+				const probe = new Image();
+				probe.onload = () => resolve(true);
+				probe.onerror = () => resolve(false);
+				probe.src = url;
+			});
+		}
+
 		const EMPTY_STUDIO_STATE = () => ({
 			items: [],
+			history: [],
 			refs: [],
 			job: null,
 			draft: { prompt: "", model: null, size: null, count: 1 },
@@ -762,9 +846,53 @@ window.__ModuleLoader__.load({
 								Array.isArray(entry.data?.files),
 						)
 					: [];
+				// 历史记录只存提示词与路径：图片本身永远从原路径读，路径失效就只剩提示词。
+				let history = Array.isArray(parsed?.history)
+					? parsed.history
+							.filter(
+								(entry) =>
+									entry !== null &&
+									typeof entry === "object" &&
+									typeof entry.prompt === "string" &&
+									Array.isArray(entry.files),
+							)
+							.map((entry) => ({
+								...entry,
+								// 旧条目没有 referenceImages：补成空数组，读取逻辑不用到处判空。
+								referenceImages: Array.isArray(entry.referenceImages)
+									? entry.referenceImages.filter(
+											(reference) =>
+												reference !== null &&
+												typeof reference === "object" &&
+												typeof reference.path === "string" &&
+												reference.path.length > 0,
+										)
+									: [],
+							}))
+					: [];
+				// 旧版本只有成图墙（items），没有 history：把旧瓦片就地补成历史，
+				// 免得用户升级后看到「历史记录」是空的、以为以前出的图丢了。
+				if (history.length === 0 && items.length > 0 && Number(parsed?.v ?? 0) < 3) {
+					history = items
+						.map((item) => ({
+							id: `${String(item.id ?? "legacy")}-hist`,
+							at: item.at,
+							prompt: typeof item.data?.prompt === "string" ? item.data.prompt : "",
+							model: item.data?.model,
+							size: item.data?.size,
+							mode: item.data?.mode,
+							references: item.data?.references,
+							referenceImages: Array.isArray(item.data?.referenceImages)
+								? item.data.referenceImages
+								: [],
+							files: item.data.files,
+						}))
+						.filter((entry) => entry.prompt.length > 0);
+				}
 				const draft = parsed?.draft ?? {};
 				return {
 					items: items.slice(0, GALLERY_LIMIT),
+					history: history.slice(0, HISTORY_LIMIT),
 					refs: [],
 					job: null,
 					draft: {
@@ -789,8 +917,9 @@ window.__ModuleLoader__.load({
 					localStorage.setItem(
 						STUDIO_STORE_KEY,
 						JSON.stringify({
-							v: 2,
+							v: 3,
 							items: state.items.slice(0, GALLERY_LIMIT),
+							history: state.history.slice(0, HISTORY_LIMIT),
 							draft: state.draft,
 						}),
 					);
@@ -856,17 +985,57 @@ window.__ModuleLoader__.load({
 						n: request.n,
 						references: Array.isArray(request.references) ? request.references : [],
 					});
+					const files = Array.isArray(result.files) ? result.files : [];
+					const referenceImages = Array.isArray(result.referenceImages)
+						? result.referenceImages.filter(
+								(entry) =>
+									entry !== null &&
+									typeof entry === "object" &&
+									typeof entry.path === "string" &&
+									entry.path.length > 0,
+							)
+						: [];
+					const at = Date.now();
 					const data = {
 						prompt: result.prompt,
 						model: result.model,
 						size: result.size,
 						mode: result.mode,
 						references: result.references,
-						files: Array.isArray(result.files) ? result.files : [],
+						referenceImages,
+						files,
+					};
+					// 批量产图：**每张图各占一格**。
+					// 以前一次请求只生成一个瓦片、只画 files[0]，读着「张数 3」却只看到
+					// 一张脸 —— 看起来就是批量没生效。这里把 files 摊平，几张就几格。
+					const tiles = files.map((file, index) => ({
+						id: refKey(`out${index}`),
+						at,
+						data: { ...data, files: [file] },
+					}));
+					// 历史记录的粒度是「一次生成」：批量出的几张都在这一条下面，
+					// 但真正要在历史里回拉的是**这次用的参考图**（referenceImages）。
+					const entry = {
+						id: refKey("hist"),
+						at,
+						prompt: data.prompt,
+						model: data.model,
+						size: data.size,
+						mode: data.mode,
+						references: data.references,
+						referenceImages,
+						files,
 					};
 					set({
-						items: [{ id: refKey("out"), at: Date.now(), data }, ...state.items].slice(0, GALLERY_LIMIT),
-						job: { ...job, status: "done", finishedAt: Date.now(), references: data.references },
+						items: [...tiles, ...state.items].slice(0, GALLERY_LIMIT),
+						history: [entry, ...state.history].slice(0, HISTORY_LIMIT),
+						job: {
+							...job,
+							status: "done",
+							finishedAt: Date.now(),
+							references: data.references,
+							files: files.length,
+						},
 					});
 				} catch (error) {
 					set({
@@ -893,6 +1062,7 @@ window.__ModuleLoader__.load({
 				setRefs: (next) => set({ refs: typeof next === "function" ? next(state.refs) : next }),
 				startJob,
 				clearItems: () => set({ items: [] }),
+				clearHistory: () => set({ history: [] }),
 				/** 只给自检用：把 store 恢复成冷启动状态。 */
 				reset: () => {
 					state = EMPTY_STUDIO_STATE();
@@ -1074,6 +1244,58 @@ window.__ModuleLoader__.load({
 		}
 
 		/**
+		 * 历史记录一行：缩略图 + 提示词 + 元信息。
+		 *
+		 * 缩略图优先显示**当时用的第一张参考图**（历史记录回拉的就是它），
+		 * 文生图没有参考图时退回显示生成结果。文件被挪走/删掉时 `onError`
+		 * 换成占位符 —— 这一行仍然可点，提示词和还活着的参考图照样能拉回来。
+		 */
+		function HistoryRow({ entry, t, locale, onPick }) {
+			const files = Array.isArray(entry?.files) ? entry.files : [];
+			const referenceImages = Array.isArray(entry?.referenceImages) ? entry.referenceImages : [];
+			const coverPath = referenceImages[0]?.path ?? files[0]?.path;
+			const url = studioImageUrl(coverPath);
+			const [broken, setBroken] = React.useState(false);
+			const meta = [entry?.model, sizeLabel(entry?.size, locale), clockOf(entry?.at)]
+				.filter((part) => typeof part === "string" && part.length > 0)
+				.join(" · ");
+			const refLabel =
+				referenceImages.length > 0
+					? ` · ${t("studio.refCount").replace("{n}", String(referenceImages.length))}`
+					: "";
+			const countLabel =
+				files.length > 1 ? ` · ${t("studio.historyFiles").replace("{n}", String(files.length))}` : "";
+			return h(
+				"button",
+				{
+					type: "button",
+					className: "ig2-histRow",
+					title: String(entry?.prompt ?? ""),
+					onClick: () => onPick?.(entry),
+				},
+				h(
+					"span",
+					{ className: "ig2-histThumb" },
+					url === undefined || broken
+						? h("span", { className: "ig2-histThumbMissing", title: t("studio.historyMissing") }, "×")
+						: h("img", {
+								src: url,
+								alt: "",
+								loading: "lazy",
+								draggable: false,
+								onError: () => setBroken(true),
+							}),
+				),
+				h(
+					"span",
+					{ className: "ig2-histBody" },
+					h("span", { className: "ig2-histPrompt" }, String(entry?.prompt ?? "")),
+					h("span", { className: "ig2-histMeta" }, `${meta}${refLabel}${countLabel}`),
+				),
+			);
+		}
+
+		/**
 		 * 生图台正文。
 		 *
 		 * 直接打宿主的 `/image-gen/studio` 路由：提示词原样进请求体，**没有模型参与**，
@@ -1086,7 +1308,7 @@ window.__ModuleLoader__.load({
 
 			const snapshot = React.useSyncExternalStore(options.subscribe, options.getSnapshot);
 			const studio = React.useSyncExternalStore(studioStore.subscribe, studioStore.getSnapshot);
-			const { items, refs, job } = studio;
+			const { items, refs, job, history } = studio;
 			const draft = studio.draft;
 
 			const prompt = draft.prompt;
@@ -1119,6 +1341,9 @@ window.__ModuleLoader__.load({
 			// 灯箱：undefined = 关；数字 = 正在看哪一张（items 的索引）。
 			const [lightbox, setLightbox] = React.useState(undefined);
 			const [clearArmed, setClearArmed] = React.useState(false);
+			// 历史记录：默认展开（有记录时一眼能看到），预览是「这条记录的第几张」。
+			const [historyOpen, setHistoryOpen] = React.useState(() => history.length > 0);
+			const [historyArmed, setHistoryArmed] = React.useState(false);
 			const [now, setNow] = React.useState(() => Date.now());
 			const fileInput = React.useRef(null);
 
@@ -1135,6 +1360,11 @@ window.__ModuleLoader__.load({
 				const timer = setInterval(() => setNow(Date.now()), 500);
 				return () => clearInterval(timer);
 			}, [busy]);
+
+			// 出了第一张图之后自动把历史展开一次；用户之后手动收起不会被反复顶开。
+			React.useEffect(() => {
+				if (history.length > 0) setHistoryOpen(true);
+			}, [history.length]);
 
 			const status =
 				notice ??
@@ -1154,6 +1384,9 @@ window.__ModuleLoader__.load({
 									kind: "done",
 									text:
 										t("studio.done") +
+										(Number(job.files) > 1
+											? ` · ${t("studio.historyFiles").replace("{n}", String(job.files))}`
+											: "") +
 										(Number(job.references) > 0
 											? ` · ${t("studio.refCount").replace("{n}", String(job.references))}`
 											: ""),
@@ -1252,6 +1485,74 @@ window.__ModuleLoader__.load({
 				[refs, t],
 			);
 
+			/** 灯箱里的「参考」与成图瓦片走同一个入口（以前这里引用了不存在的函数）。 */
+			const addPathRef = useAsRef;
+
+			/**
+			 * 点一条历史记录：把提示词 / 模型 / 尺寸 / 张数拉回输入区，
+			 * 并把**当时用的参考图**重新装回参考图托盘。
+			 *
+			 * 参考图只在原路径仍能读时恢复；失效的跳过并说明。
+			 * 历史只存稳定路径、不存图片字节，所以不会把 localStorage 撑爆。
+			 */
+			const pickHistory = async (entry) => {
+				if (entry === undefined || entry === null) return;
+				const files = Array.isArray(entry.files) ? entry.files : [];
+				const referenceImages = Array.isArray(entry.referenceImages) ? entry.referenceImages : [];
+				setPrompt(String(entry.prompt ?? ""));
+				if (typeof entry.model === "string" && entry.model.length > 0) setModel(entry.model);
+				if (typeof entry.size === "string" && entry.size.length > 0) setSize(entry.size);
+				setCount(Math.max(1, Math.min(maxCount, files.length > 0 ? files.length : 1)));
+
+				if (referenceImages.length === 0) {
+					setRefs([]);
+					setNotice({ kind: "notice", text: t("studio.historyNoRefs") });
+					return;
+				}
+
+				const restored = [];
+				let missing = 0;
+				for (const reference of referenceImages.slice(0, MAX_REFS)) {
+					const path = reference?.path;
+					if (typeof path !== "string" || path.length === 0) {
+						missing += 1;
+						continue;
+					}
+					const alive = await probeStudioImage(studioImageUrl(path));
+					if (!alive) {
+						missing += 1;
+						continue;
+					}
+					try {
+						const read = await readImagePath(path);
+						restored.push({ key: refKey("ref"), path, ...read });
+					} catch {
+						missing += 1;
+					}
+				}
+
+				if (restored.length > 0) {
+					setRefs(restored);
+					setNotice(
+						missing > 0
+							? {
+									kind: "notice",
+									text: t("studio.historyRefsPartial").replace("{n}", String(missing)),
+								}
+							: {
+									kind: "notice",
+									text: t("studio.historyRefsRestored").replace(
+										"{n}",
+										String(restored.length),
+									),
+								},
+					);
+				} else {
+					setRefs([]);
+					setNotice({ kind: "notice", text: t("studio.historyRefsGone") });
+				}
+			};
+
 			const copyPath = React.useCallback((path) => {
 				const write = navigator.clipboard?.writeText?.(String(path ?? ""));
 				if (write === undefined) return;
@@ -1298,6 +1599,8 @@ window.__ModuleLoader__.load({
 						mediaType: entry.mediaType,
 						data: entry.data,
 						...(entry.name === undefined ? {} : { name: entry.name }),
+						// 有原始路径就带上：宿主能直接引用，历史回拉也能沿用同一路径。
+						...(entry.path === undefined ? {} : { path: entry.path }),
 					}));
 				void studioStore.startJob({
 					prompt: text,
@@ -1328,6 +1631,17 @@ window.__ModuleLoader__.load({
 				}
 				setClearArmed(false);
 				studioStore.clearItems();
+			};
+
+			/** 历史记录也走两次确认（它记着提示词，误清不好补）。 */
+			const clearHistory = () => {
+				if (!historyArmed) {
+					setHistoryArmed(true);
+					setTimeout(() => setHistoryArmed(false), 2600);
+					return;
+				}
+				setHistoryArmed(false);
+				studioStore.clearHistory();
 			};
 
 			const modeLabel = refs.length > 0 ? t("studio.editMode") : t("studio.generateMode");
@@ -1656,6 +1970,56 @@ window.__ModuleLoader__.load({
 								}),
 							),
 						),
+				),
+
+				// ── 历史记录：每次出图一条；点一下回填提示词并尽量打开原图 ──
+				h(
+					"div",
+					{ className: "ig2-history" },
+					h(
+						"div",
+						{ className: "ig2-secHead ig2-histHead" },
+						h(
+							"button",
+							{
+								type: "button",
+								className: "ig2-histToggle",
+								"aria-expanded": historyOpen ? true : false,
+								title: historyOpen ? t("studio.historyCollapse") : t("studio.historyExpand"),
+								onClick: () => setHistoryOpen((prev) => !prev),
+							},
+							`${historyOpen ? "▾" : "▸"} ${t("studio.history")}` +
+								(history.length > 0 ? ` · ${history.length}` : ""),
+						),
+						h("span", { className: "ig2-grow" }),
+						history.length > 0
+							? h(
+									"button",
+									{ type: "button", className: "ig2-linkBtn", onClick: clearHistory },
+									historyArmed ? t("studio.historyClearConfirm") : t("studio.historyClear"),
+								)
+							: null,
+					),
+					historyOpen
+						? history.length === 0
+							? h("p", { className: "ig2-hint", style: { margin: 0 } }, t("studio.historyEmpty"))
+							: h(
+									"div",
+									{ className: "ig2-histList" },
+									history.map((entry) =>
+										h(HistoryRow, {
+											key: entry.id,
+											entry,
+											t,
+											locale,
+											onPick: pickHistory,
+										}),
+									),
+								)
+						: null,
+					historyOpen && history.length > 0
+						? h("p", { className: "ig2-hint", style: { margin: 0 } }, t("studio.historyHint"))
+						: null,
 				),
 
 				h(

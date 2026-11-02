@@ -105,6 +105,10 @@ const studioRequests = [];
 const studioResults = [];
 /** 设成一个 Promise 时，生图路由会等它 resolve 再返回（用来模拟“正在生成”）。 */
 let holdStudio;
+/** 模拟「中转站把 n 当空气」：无论请求几张都只回一张。 */
+let upstreamIgnoresN = false;
+/** 模拟上游 500。 */
+let upstreamFails = false;
 
 /** 把面板请求喂给真实的宿主路由处理器（request/response 用最小替身）。 */
 function invokeStudioRoute(payload) {
@@ -159,7 +163,14 @@ globalThis.fetch = async (url, init = {}) => {
     };
   }
   requests.push({ url: target, init });
-  const count = requestedCount(init);
+  if (upstreamFails) {
+    return {
+      ok: false,
+      status: 500,
+      text: async () => JSON.stringify({ error: { message: "upstream boom" } }),
+    };
+  }
+  const count = upstreamIgnoresN ? 1 : requestedCount(init);
   return {
     ok: true,
     status: 200,
@@ -181,6 +192,8 @@ let studioRoute;
 let studioFileRoute;
 let turnStartSeq = 0;
 const listeners = [];
+/** dsh-task-notify 暴露的 taskNotify 服务收到的通知。 */
+const notifications = [];
 const session = { header: { id: "s1", cwd: workspace }, append() {} };
 const agent = { session };
 const signal = new AbortController().signal;
@@ -196,6 +209,7 @@ const ctx = {
     if (name === "credentials") return { resolve: async () => ({ value: "test-key" }) };
     if (name === "sessionProjections") return { stateOf: () => ({ openTurnStartSeq: turnStartSeq }) };
     if (name === "attachments") return { readImage: async () => ({ data: PNG }) };
+    if (name === "taskNotify") return { notify: (spec) => notifications.push(spec) };
     return undefined;
   },
   inject: (_names, cb) =>
@@ -348,6 +362,19 @@ eq(twoRefs.mode, "edit", "有参考图即图生图");
 const multi = requests[0].init.body.toString("latin1");
 eq((multi.match(/name="image\[\]"/g) || []).length, 2, "多张用两个 image[] 部件");
 ok(multi.indexOf("reference1") < multi.indexOf("reference2"), "部件顺序 = 传入顺序");
+
+/* 批量产图：上游不认 n 时必须自己补齐，不能只回一张。 */
+newTurn("来三张不同姿势的猫");
+requests.length = 0;
+upstreamIgnoresN = true;
+const batch = await tool.execute({ prompt: "any", n: 3 }, { agent, signal });
+upstreamIgnoresN = false;
+eq(batch.files.length, 3, "上游忽略 n 时补齐到 3 张");
+eq(requests.length, 3, "先打一次批量请求，再补 2 次单张");
+ok(
+  batch.files.every((file) => existsSync(file.path)),
+  "补齐的每一张都真的落盘了",
+);
 
 /* ── 6. `/image`：命令行字节即提示词 ───────────────────────────────── */
 
@@ -645,6 +672,19 @@ globalThis.document = {
   baseURI: "http://127.0.0.1:1/",
   createElement: () => ({ dataset: {}, textContent: "", remove() {} }),
   head: { appendChild() {} },
+};
+/**
+ * 极简 Image：路径里带 `missing-history` 就当作加载失败，
+ * 其余一律成功 —— 用来验证「历史记录只在原路径还有效时打开原图」。
+ */
+globalThis.Image = class {
+  set src(value) {
+    const target = String(value ?? "");
+    queueMicrotask(() => {
+      if (target.includes("missing-history")) this.onerror?.();
+      else this.onload?.();
+    });
+  }
 };
 
 let captured;
@@ -993,7 +1033,178 @@ const runningTree = card.component({
 });
 ok(JSON.stringify(runningTree).includes("card.running"), "运行中显示等待文案");
 
-/* ── 10. 收尾 ──────────────────────────────────────────────────────── */
+/* ── 10. 批量产图 / 历史记录 / 消息提醒 ─────────────────────────────── */
+
+/* Host：生图台成功 / 失败都要触发 taskNotify。 */
+notifications.length = 0;
+const notified = await invokeStudioRoute({
+  prompt: "通知测试",
+  model: "gpt-image-2.5",
+  size: "1024x1024",
+  n: 1,
+});
+eq(notified.ok, true, "生图台直连路由成功");
+ok(
+  notifications.length === 1 &&
+    notifications[0].status === "done" &&
+    String(notifications[0].title).includes("生图"),
+  "生图完成会激活消息提醒",
+);
+
+notifications.length = 0;
+upstreamFails = true;
+const failedResult = await invokeStudioRoute({ prompt: "必败", n: 1 });
+upstreamFails = false;
+eq(failedResult.ok, false, "上游失败回 ok:false");
+ok(
+  notifications.length === 1 && notifications[0].status === "failed",
+  "生图失败也会提醒（failed 语气）",
+);
+
+/* Host：没有原始路径的参考图（上传/粘贴）要落一份稳定副本，并随结果回传路径。 */
+const withRef = await invokeStudioRoute({
+  prompt: "参考图落盘测试",
+  n: 1,
+  references: [{ data: PNG.toString("base64"), mediaType: "image/png" }],
+});
+eq(withRef.ok, true, "带参考图的生图台请求成功");
+eq(
+  Array.isArray(withRef.referenceImages) ? withRef.referenceImages.length : -1,
+  1,
+  "响应带回参考图路径",
+);
+ok(
+  typeof withRef.referenceImages?.[0]?.path === "string" &&
+    withRef.referenceImages[0].path.includes(join("studio", "refs")),
+  "无路径参考图落到 <studioDir>/refs",
+);
+ok(existsSync(withRef.referenceImages[0].path), "参考图副本已真实落盘");
+
+/* Client：批量出 3 张 → 成图墙 3 格；历史一条；点历史把**参考图**拉回托盘。 */
+clientModule.__test.studioStore.reset();
+const batchView = runtime.mount(pageReg.component, pageProps);
+const refPath = join(workspace, "studio", "ref-one.png");
+writeFileSync(refPath, PNG);
+clientModule.__test.studioStore.setRefs([
+  {
+    key: "r1",
+    path: refPath,
+    data: PNG.toString("base64"),
+    mediaType: "image/png",
+    name: "ref-one.png",
+  },
+]);
+runtime.findAll(batchView.tree, (node) => node.type === "textarea")[0].props.onChange({
+  target: { value: "三张不同姿势的猫" },
+});
+await runtime.flush(2);
+const plus = () =>
+  runtime.findAll(
+    batchView.tree,
+    (node) => node.type === "button" && node.props?.["aria-label"] === "+1",
+  )[0];
+plus().props.onClick();
+await runtime.flush(2);
+plus().props.onClick();
+await runtime.flush(2);
+eq(clientModule.__test.studioStore.getSnapshot().draft.count, 3, "张数步进到 3");
+runtime
+  .findAll(
+    batchView.tree,
+    (node) => node.type === "button" && JSON.stringify(node.children ?? []).includes("studio.generate"),
+  )[0]
+  .props.onClick();
+await runtime.flush(40);
+eq(
+  runtime.findAll(batchView.tree, (node) => node.type === "article").length,
+  3,
+  "批量出 3 张 → 成图墙 3 格（不再只显示第一张）",
+);
+const batchSnap = clientModule.__test.studioStore.getSnapshot();
+eq(batchSnap.history.length, 1, "一次批量 = 一条历史记录");
+eq(batchSnap.history[0].files.length, 3, "历史记录保留 3 张生成结果路径");
+eq(batchSnap.history[0].referenceImages.length, 1, "历史记录保留当时用的参考图");
+eq(batchSnap.history[0].referenceImages[0].path, refPath, "参考图路径就是原图路径");
+
+// 点历史：提示词 + 参考图一起拉回来（先把托盘清空，证明是历史装回来的）。
+clientModule.__test.studioStore.setRefs([]);
+runtime.findAll(batchView.tree, (node) => node.type === "textarea")[0].props.onChange({
+  target: { value: "临时占位" },
+});
+await runtime.flush(2);
+const histRow = () =>
+  runtime.findAll(
+    batchView.tree,
+    (node) => node.type === "button" && node.props?.className === "ig2-histRow",
+  )[0];
+ok(histRow() !== undefined, "历史记录有可点击的行");
+histRow().props.onClick();
+await runtime.flush(30);
+eq(clientModule.__test.studioStore.getSnapshot().draft.prompt, "三张不同姿势的猫", "点历史回填提示词");
+eq(
+  clientModule.__test.studioStore.getSnapshot().refs.length,
+  1,
+  "点历史把参考图重新装回托盘",
+);
+eq(
+  clientModule.__test.studioStore.getSnapshot().refs[0]?.path,
+  refPath,
+  "拉回的参考图路径正确",
+);
+ok(
+  runtime.textsOf(batchView.tree).includes("studio.historyRefsRestored"),
+  "提示已拉回参考图",
+);
+eq(
+  runtime.findAll(batchView.tree, (node) => node.props?.className === "ig2-lightbox").length,
+  0,
+  "点历史不再把生成结果当主图打开",
+);
+
+// 参考图路径失效：只回填提示词，不把坏图塞回托盘。
+batchSnap.history[0].referenceImages[0].path = "D:/missing-history/ref.png";
+clientModule.__test.studioStore.setRefs([]);
+histRow().props.onClick();
+await runtime.flush(30);
+ok(
+  runtime.textsOf(batchView.tree).includes("studio.historyRefsGone"),
+  "参考图路径失效：说明只回填了提示词",
+);
+eq(
+  clientModule.__test.studioStore.getSnapshot().refs.length,
+  0,
+  "失效的参考图不会被塞回托盘",
+);
+
+/* 文生图历史：没有参考图，只回填提示词。 */
+clientModule.__test.studioStore.reset();
+const plainView = runtime.mount(pageReg.component, pageProps);
+runtime.findAll(plainView.tree, (node) => node.type === "textarea")[0].props.onChange({
+  target: { value: "纯文生图" },
+});
+await runtime.flush(2);
+runtime
+  .findAll(
+    plainView.tree,
+    (node) => node.type === "button" && JSON.stringify(node.children ?? []).includes("studio.generate"),
+  )[0]
+  .props.onClick();
+await runtime.flush(30);
+const plainSnap = clientModule.__test.studioStore.getSnapshot();
+eq(plainSnap.history[0].referenceImages.length, 0, "文生图历史没有参考图");
+runtime
+  .findAll(
+    plainView.tree,
+    (node) => node.type === "button" && node.props?.className === "ig2-histRow",
+  )[0]
+  .props.onClick();
+await runtime.flush(16);
+ok(
+  runtime.textsOf(plainView.tree).includes("studio.historyNoRefs"),
+  "文生图历史：提示没有参考图",
+);
+
+/* ── 11. 收尾 ──────────────────────────────────────────────────────── */
 
 if (!keep) rmSync(root, { recursive: true, force: true });
 else console.log(`临时目录保留在 ${root}`);

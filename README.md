@@ -41,7 +41,7 @@
 
 | 包 | 一句话 | 界面位置 | 平台 |
 | --- | --- | --- | --- |
-| [`dsh-image-gen`](packages/dsh-image-gen) | `image_generate` 工具 + `/image` 命令 + 一页独立的**生图台**（成图墙、参考图、灯箱、按会话隔离）+ 「设置 → 生图」 | 左栏「生图」入口 | 全平台 |
+| [`dsh-image-gen`](packages/dsh-image-gen) | `image_generate` 工具 + `/image` 命令 + 一页独立的**生图台**（全局工作台、批量出图、历史记录、参考图回填、灯箱）+ 「设置 → 生图」 | 左栏「生图」入口 | 全平台 |
 | [`dsh-token-widget`](packages/dsh-token-widget) | 右下角角色立绘 + 气泡：**token 用量 / 账户余额** 两页翻，可拖动、可缩放、可换立绘 | 全局浮层 | 全平台 |
 | [`dsh-session-cost`](packages/dsh-session-cost) | 会话标题栏金额徽章：本会话在 **DeepSeek 官方模型**上花了多少钱（官方人民币 / 美元两份价目表，区分高峰空闲） | 会话标题栏右侧 | 全平台 |
 | [`dsh-task-notify`](packages/dsh-task-notify) | 每轮对话结束在 Windows 右下角弹一条**跟随主题**的通知，逐像素 alpha 圆角，6.5 秒自散，最多叠 4 条 | Windows 桌面右下角 | **仅 Windows** |
@@ -249,7 +249,7 @@ bash scripts/uninstall.sh dsh-token-widget
 | profile 组合树 | 五行 insert 全部落在组合末尾 |
 | 客户端 bundle | 74 个条目全进 `batches`，五个包均 HTTP 200 正常下发 |
 | 宿主能力 | `session-cost` 投影 200 · `task-notify` 主题口 405（路由在） · `image-gen` 真文件 200 `image/png` |
-| 离线自检 | `dsh-image-gen` 的 `node tools/verify.mjs` → **95 / 95 通过** |
+| 离线自检 | `dsh-image-gen` 的 `node tools/verify.mjs` → **122 / 122 通过** |
 | 脚本 | 装 / 卸各跑一遍，卸载后 manifest 精确回到基线 |
 
 完整记录（环境、每一项的方法与证据、DSH 升级时该盯的契约）：[**COMPATIBILITY.md**](COMPATIBILITY.md)

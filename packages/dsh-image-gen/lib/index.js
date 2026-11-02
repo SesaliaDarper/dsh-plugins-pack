@@ -65,6 +65,7 @@
  * 存储按请求解析（见 @deepseek-ai/dsh-credentials）。
  */
 
+import { createHash } from "node:crypto";
 import { mkdir, open, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { isAbsolute, join, relative } from "node:path";
@@ -671,6 +672,28 @@ export function apply(ctx, config) {
   /** `user-append` 这次允许的追加段字数上限。 */
   const appendixLimit = (raw) => Math.max(APPENDIX_MIN_CHARS, charCount(raw) * 2);
 
+  /**
+   * 联动 dsh-task-notify 的右下角通知。
+   *
+   * 生图台走的是宿主同源路由，**不产生对话轮次**，所以 task-notify 唯一的
+   * `turn/end` 触发点永远等不到它 —— 用户切去别的页面干活时，图已经出完了，
+   * 却没有任何提示。这里把「完成 / 失败」主动交给 task-notify 暴露的
+   * `taskNotify` 服务；对方没装、版本太老、或内部渲染进程起不来，都静默跳过，
+   * 生图本身不受影响（通知是锦上添花，绝不能反过来把成图搞丢）。
+   */
+  const notifyTask = (spec) => {
+    try {
+      const bridge = typeof ctx.get === "function" ? ctx.get("taskNotify") : undefined;
+      if (bridge !== undefined && bridge !== null && typeof bridge.notify === "function") {
+        bridge.notify(spec);
+        return true;
+      }
+    } catch {
+      /* 通知失败不冒泡：图已经落盘，不能因为弹窗问题把它变成一次错误。 */
+    }
+    return false;
+  };
+
   /* ─────────────────────── 真正打上游的那一段 ─────────────────────── */
 
   /**
@@ -705,33 +728,67 @@ export function apply(ctx, config) {
       text(live("apiKeyEnv"), "YITAIZHONGJI_IMAGE_API_KEY"),
     );
 
-    let items;
-    if (mode === "edit") {
-      const boundary = `----dshImageGen${stamp()}${Math.random().toString(36).slice(2)}`;
-      // 一张用 `image`（长期验证过的形状），多张用重复的 `image[]`（实测可用且保序）。
-      const fieldName = references.length === 1 ? "image" : "image[]";
-      const body = buildMultipart(
-        boundary,
-        { model: resolvedModel, prompt, n: resolvedN, size: resolvedSize },
-        references.map((reference, index) => ({
-          name: fieldName,
-          filename: `reference${index + 1}${reference.ext}`,
-          contentType: reference.contentType,
-          data: reference.data,
-        })),
-      );
-      items = await requestImages(context, config, apiKey, `${baseURL()}/images/edits`, {
-        method: "POST",
-        headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
-        body,
-      });
-    } else {
-      items = await requestImages(context, config, apiKey, `${baseURL()}/images/generations`, {
+    /**
+     * 打一次上游，拿回 `data[]`。
+     *
+     * 每次调用都重新生成 boundary / 重新序列化参考图 —— 除了 n（张数）不同，
+     * 其余字段逐字节一致，所以「批量补齐」时每一张的语义和第一张完全相同。
+     */
+    let callSeq = 0;
+    const requestOnce = async (count) => {
+      callSeq += 1;
+      if (mode === "edit") {
+        const boundary = `----dshImageGen${stamp()}-${callSeq}-${Math.random()
+          .toString(36)
+          .slice(2)}`;
+        // 一张用 `image`（长期验证过的形状），多张用重复的 `image[]`（实测可用且保序）。
+        const fieldName = references.length === 1 ? "image" : "image[]";
+        const body = buildMultipart(
+          boundary,
+          { model: resolvedModel, prompt, n: count, size: resolvedSize },
+          references.map((reference, index) => ({
+            name: fieldName,
+            filename: `reference${index + 1}${reference.ext}`,
+            contentType: reference.contentType,
+            data: reference.data,
+          })),
+        );
+        return requestImages(context, config, apiKey, `${baseURL()}/images/edits`, {
+          method: "POST",
+          headers: { "content-type": `multipart/form-data; boundary=${boundary}` },
+          body,
+        });
+      }
+      return requestImages(context, config, apiKey, `${baseURL()}/images/generations`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ model: resolvedModel, prompt, n: resolvedN, size: resolvedSize }),
+        body: JSON.stringify({ model: resolvedModel, prompt, n: count, size: resolvedSize }),
       });
+    };
+
+    /**
+     * 批量出图：**不能只信上游的 `n`**。
+     *
+     * 中转站背后的生图模型常常把 `n` 当空气 —— 传 `n: 3` 只回一张，于是
+     * 「张数」选择器看起来完全没用（历史现象：目录里从来只有 `img-xxx.png`，
+     * 从没出现过 `img-xxx-1.png/-2.png`）。所以先按请求的 n 打一次；如果
+     * 回来的张数不够，就把缺的几张用 `n: 1` 并发补齐，最后按 n 截断。
+     * 上游支持 n 时只有一次请求，不支持时也一定拿到用户要的张数。
+     */
+    let items = await requestOnce(resolvedN);
+    if (items.length < resolvedN) {
+      const missing = resolvedN - items.length;
+      const extra = await Promise.all(
+        Array.from({ length: missing }, () =>
+          requestOnce(1).catch(() => []),
+        ),
+      );
+      for (const group of extra) {
+        for (const item of group) items.push(item);
+        if (items.length >= resolvedN) break;
+      }
     }
+    if (items.length > resolvedN) items = items.slice(0, resolvedN);
 
     const dir = await toHostPath(
       ctx,
@@ -1300,9 +1357,57 @@ export function apply(ctx, config) {
       const contentType =
         sniffed?.mime ?? (declared !== undefined && REFERENCE_MIME.has(declared) ? declared : undefined);
       if (contentType === undefined) throw new Error("参考图只支持 PNG / JPEG / WebP / GIF。");
-      references.push({ data, ext: sniffed?.ext ?? ".png", contentType });
+      // `path` 是客户端能拿到的原始路径（Electron 的 File.path / 盘上成图）；
+      // 拿不到也没关系 —— 落盘时会给它安排一个稳定副本。
+      const path =
+        typeof entry?.path === "string" && entry.path.length > 0 ? entry.path : undefined;
+      references.push({ data, ext: sniffed?.ext ?? ".png", contentType, ...(path === undefined ? {} : { path }) });
     }
     return references;
+  };
+
+  /**
+   * 为历史记录准备参考图的**稳定可读路径**。
+   *
+   * 历史要能「点一下把当时用的参考图拉回来」，所以这些图必须留有可再读的路径：
+   *   - 原本就在生图目录里的（例如上一张成图被当参考）直接用原路径；
+   *   - 上传/粘贴进来的只有字节、没有可读路径 —— 按内容哈希写进
+   *     `<studioDir>/refs/`，同图只落一份，路径永远落在读图路由允许的根里。
+   *
+   * 返回顺序即「图一/图二」的送入顺序。
+   */
+  const persistStudioReferences = async (references, studioDir) => {
+    if (!Array.isArray(references) || references.length === 0) return [];
+    const dir = join(studioDir, "refs");
+    const roots = studioReadRoots().map((root) =>
+      (root.endsWith("/") || root.endsWith("\\") ? root : root + "/").replace(/\\/g, "/"),
+    );
+    const under = (candidate) => {
+      const normalized = String(candidate).replace(/\\/g, "/");
+      return roots.some((root) => normalized.startsWith(root));
+    };
+
+    await mkdir(dir, { recursive: true });
+    const stored = [];
+    for (const reference of references) {
+      try {
+        let path;
+        if (typeof reference.path === "string" && reference.path.length > 0 && under(reference.path)) {
+          // 路径在可读根里还不够，得确认文件真的还在；不在就退回落副本。
+          const info = await stat(reference.path).catch(() => undefined);
+          if (info !== undefined && info.isFile()) path = reference.path;
+        }
+        if (path === undefined) {
+          const hash = createHash("sha256").update(reference.data).digest("hex").slice(0, 24);
+          path = join(dir, `ref-${hash}${reference.ext || ".png"}`);
+          await writeFile(path, reference.data);
+        }
+        stored.push({ path, bytes: reference.data.length });
+      } catch {
+        /* 单张参考图落盘失败就跳过它，不能连累已经出好的图。 */
+      }
+    }
+    return stored;
   };
 
   const handleStudioRequest = async (request, response) => {
@@ -1357,6 +1462,25 @@ export function apply(ctx, config) {
         references,
         outputDir: studioDir,
       });
+      // 把这次实际用的参考图落成稳定路径，连同结果一起回给面板 ——
+      // 历史记录要能「点一下把当时用的参考图拉回来」，靠的就是这里。
+      // 落盘失败也不能影响已经生成好的图。
+      let referenceImages = [];
+      try {
+        referenceImages = await persistStudioReferences(references, studioDir);
+      } catch {
+        referenceImages = [];
+      }
+      // 生图台不产生 turn/end，所以这里主动触发右下角消息提示。
+      notifyTask({
+        status: "done",
+        title: "生图完成",
+        body: preview(prompt, 90),
+        meta:
+          `${result.files.length} 张 · ${result.model} · ${result.size}` +
+          (referenceImages.length > 0 ? ` · 参考图 ${referenceImages.length} 张` : ""),
+        sound: "done.wav",
+      });
       sendStudioJson(response, 200, {
         ok: true,
         prompt: result.prompt,
@@ -1364,6 +1488,7 @@ export function apply(ctx, config) {
         size: result.size,
         mode: result.mode,
         references: result.references,
+        referenceImages,
         dir: studioDir,
         files: result.files.map((file) => ({
           path: file.path,
@@ -1373,6 +1498,14 @@ export function apply(ctx, config) {
       });
     } catch (error) {
       // 上游失败也回 200 + ok:false：面板只关心「成没成、为什么」。
+      const detail = error instanceof Error ? error.message : String(error);
+      notifyTask({
+        status: "failed",
+        title: "生图失败",
+        body: preview(detail, 90),
+        meta: "生图台",
+        sound: "failed.wav",
+      });
       sendStudioJson(response, 200, { ok: false, error: failureText(error, "生图失败") });
     }
   };

@@ -21,10 +21,43 @@ DSH 每完成一轮对话，就在 Windows 右下角弹一条**跟随当前主�
 - 圆角是真透明的：窗口用 `WS_EX_LAYERED` + `UpdateLayeredWindow` 逐像素
   alpha 绘制，不会有黑角或白角。
 - 6.5 秒后自动消失；最多同时堆叠 4 条；不抢焦点、不出现在任务栏。
-- 角色使用当前主题插件的原始 WebP：Gemini 猫猫、ZLM 狐耳、Grok 金发哥特、GPT 银白龙角。原生主题不显示角色。
+- 角色使用当前主题插件的原始 WebP：Gemini 猫猫、ZLM 狐耳、Grok 金发哥特、GPT 银白龙角。
+  主题认不出来（客户端还没上报 / 主题插件没装）时回退到 `assets/mascot.png`，不会出现「弹窗在、立绘空」。
+- 弹窗出现时播一声提示音：完成是上行两声、失败是下行两声、中止是一声短音（见下）。
 - 背景使用实时 token，并叠加对应主题的强调色与渐变细线。
 - UI 主线程泵送 Win32 消息、处理到期销毁；stdin 在独立读取线程入队。`duration_ms: 0` 明确表示永久显示，Host 默认仍是 6500。
 - 为支持点击收起及尝试聚焦 DSH，不使用 `WS_EX_TRANSPARENT`。窗口显示时保持不抢焦点；右键可直接关闭。
+
+## 高 DPI
+
+分层窗口用的是**物理像素**，而弹窗进程默认是 DPI 虚拟化的（125% 屏上
+`GetSystemMetrics` 只给 1536×864）。两套坐标混用会让卡片整体往右下漂移，
+右侧立绘正好被推出屏幕 —— 表现就是「立绘消失」。
+
+所以 `popup.py` 在建任何窗口之前先声明 `PER_MONITOR_AWARE_V2`，再按
+`GetDpiForSystem()/96` 把整张卡（字体、行高、立绘框、圆角）等比放大渲染，
+坐标与像素从此是同一套。100% 缩放下 `scale = 1.0`，行为与以前一致。
+
+## 提示音
+
+| 语气 | 文件 | 听感 |
+|---|---|---|
+| `completed` | `assets/sounds/done.wav` | C6 → E6 上行，带一点 G6 和声尾 |
+| `failed` | `assets/sounds/failed.wav` | A3 → F3 下行，稍厚 |
+| `aborted` / `blocked` / `max-tokens` | `assets/sounds/cancelled.wav` | 单声 G4，短促 |
+
+- 播放走 `winsound.PlaySound(..., SND_FILENAME | SND_ASYNC)`，不阻塞 UI。
+  音量缩放后的样本缓存在 `%TEMP%\dsh-task-notify-sounds\`。
+- 开关与音量写在 `state/settings.json`（插件目录下，改完下一条通知即生效）：
+
+```json
+{ "sound": true, "volume": 0.6 }
+```
+
+- 也可以直接关：环境变量 `DSH_TASK_NOTIFY_SOUND=0`。
+- 想换音色：替换同名 WAV（16-bit PCM 单声道最保险），或跑
+  `python scripts/make_sounds.py` 重新生成内置三种。
+
 
 ## 为什么不用系统 Toast
 
@@ -52,8 +85,28 @@ DSH 每完成一轮对话，就在 Windows 右下角弹一条**跟随当前主�
 | `lib/index.js` | Host 插件。订阅 `session/event`，在 `turn/end` 时组装并投递通知；另外提供 `/api/dsh-task-notify/theme` 收主题上报。 |
 | `lib/client.js` | 浏览器侧。读 `getComputedStyle` 里的 `--dsw-*` 实测值 POST 给 Host。 |
 | `lib/card.py` | 用 PIL 把一条通知画成 RGBA 卡片（渐变底、圆角、光晕、抗锯齿文字、右侧立绘）。 |
-| `lib/popup.py` | 常驻渲染进程。从 stdin 读 NDJSON，把卡片画到右下角的分层窗口上。 |
-| `assets/mascot.png` | 立绘（Q 版猫娘，透明背景）。 |
+| `lib/popup.py` | 常驻渲染进程。从 stdin 读 NDJSON，把卡片画到右下角的分层窗口上，并播提示音。 |
+| `assets/mascot.png` | 兜底立绘（Q 版猫娘，透明背景）。 |
+| `assets/sounds/` | `done.wav` / `failed.wav` / `cancelled.wav` 三条提示音。 |
+| `scripts/make_sounds.py` | 重新生成上面三条 WAV 的一次性脚本。 |
+| `lib/test_notify.py` | 自检：像 Host 那样用 stdin NDJSON 驱动一次弹窗，存一张全屏截图。 |
+
+### 给别的插件用：`taskNotify` 服务
+
+`turn/end` 只覆盖对话轮次。生图台这类不产生轮次的宿主路由，完成后可以自己调：
+
+```js
+ctx.get("taskNotify")?.notify({
+  status: "done",              // done / failed / cancelled
+  title: "生图完成",
+  body: "提示词预览…",
+  meta: "3 张 · gpt-image-2.5",
+  sound: "done.wav",
+});
+```
+
+弹的是同一条右下角通知（同一套主题、立绘、提示音），不会另外再起一个渲染进程。
+服务不存在时（没装 / 旧版本）调用方应静默跳过。
 
 ### 触发点为什么是 `turn/end`
 
@@ -79,6 +132,7 @@ DSH 的颜色真值全在 `--dsw-*` 上，而第三方主题（如 gemini-cat）
 ## 自定义
 
 - **换立绘**：替换 `assets/themes/` 中对应主题的 WebP，并保持 `manifest.json` 的映射。角色等比完整缩放，不裁剪头部。
+- **换提示音**：替换 `assets/sounds/` 里的 WAV；或用 `state/settings.json` 关掉、调音量（见上）。
 - **改停留时长**：`lib/index.js` 里 `notify()` 的 `duration_ms`。
 - **改文案**：`lib/index.js` 顶部的 `TONE` 表。
 - **改配色**：`lib/card.py` 顶部的 `DEFAULTS` / `STATUS_COLORS`；

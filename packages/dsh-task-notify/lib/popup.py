@@ -28,7 +28,9 @@ import ctypes
 import json
 import os
 import queue
+import struct
 import sys
+import tempfile
 import threading
 import time
 from ctypes import wintypes
@@ -174,6 +176,215 @@ def log(message: str) -> None:
         sys.stderr.flush()
     except Exception:
         pass
+
+
+# ── DPI ───────────────────────────────────────────────────────────────────
+#
+# 分层窗口用的是**物理像素**坐标，而 Python 进程默认是 DPI 虚拟化的
+# （125% 屏上 GetSystemMetrics 返回 1536×864 而不是 1920×1080）。
+# 两者混用会让 UpdateLayeredWindow 的位置被 DWM 再缩放一次：卡片整体
+# 往右下角漂移，右侧的角色立绘正好被推到屏幕外 —— 看起来就是「立绘
+# 消失了」。所以在创建任何窗口/DC 之前必须先把自己声明为 Per-Monitor V2，
+# 让坐标和像素变成同一套。
+
+def enable_dpi_awareness() -> None:
+    """把本进程切成 Per-Monitor V2（失败则逐级回退）。必须在建窗口前调用。"""
+    try:
+        user32.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        user32.SetProcessDpiAwarenessContext.restype = wintypes.BOOL
+        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            return  # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+    except Exception:
+        pass
+    try:
+        shcore = ctypes.WinDLL("shcore", use_last_error=True)
+        shcore.SetProcessDpiAwareness.argtypes = [ctypes.c_int]
+        shcore.SetProcessDpiAwareness.restype = ctypes.c_long
+        if shcore.SetProcessDpiAwareness(2) == 0:  # PROCESS_PER_MONITOR_DPI_AWARE
+            return
+    except Exception:
+        pass
+    try:
+        user32.SetProcessDPIAware.restype = wintypes.BOOL
+        user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+def display_scale() -> float:
+    """当前主显示器的缩放（96 DPI = 1.0）。"""
+    try:
+        user32.GetDpiForSystem.restype = ctypes.c_uint
+        user32.GetDpiForSystem.argtypes = []
+        dpi = int(user32.GetDpiForSystem())
+        if dpi > 0:
+            return dpi / 96.0
+    except Exception:
+        pass
+    try:
+        gdi32.GetDeviceCaps.argtypes = [wintypes.HDC, ctypes.c_int]
+        gdi32.GetDeviceCaps.restype = ctypes.c_int
+        dc = user32.GetDC(None)
+        if dc:
+            try:
+                dpi = int(gdi32.GetDeviceCaps(dc, 88))  # LOGPIXELSX
+            finally:
+                user32.ReleaseDC(None, dc)
+            if dpi > 0:
+                return dpi / 96.0
+    except Exception:
+        pass
+    return 1.0
+
+
+# ── 提示音 ────────────────────────────────────────────────────────────────
+#
+# 用 winsound 播 WAV。注意 winsound/PlaySound 不允许「内存 + 异步」组合
+# （会抛 RuntimeError: Cannot play asynchronously from memory），所以音量
+# 缩放后的样本要落到 %TEMP% 下的缓存文件，再用 SND_FILENAME | SND_ASYNC 播放。
+
+_sound_cache: dict[tuple[str, float], str] = {}
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+ASSETS = os.path.join(os.path.dirname(HERE), "assets")
+SOUNDS = os.path.join(ASSETS, "sounds")
+THEME_FILE = os.path.join(os.path.dirname(HERE), "state", "theme.json")
+SETTINGS_FILE = os.path.join(os.path.dirname(HERE), "state", "settings.json")
+
+
+def resolve_art(spec: dict):
+    """决定这条通知用哪张立绘。
+
+    优先用 Host 给的 art_path；没有再按 Host 上报的 themeId 查 manifest；
+    还查不到就回退到 mascot.png。立绘不该因为在哪一环丢了个字段就消失。
+    """
+    given = spec.get("art_path")
+    if isinstance(given, str) and given and os.path.isfile(given):
+        return given
+    try:
+        with open(THEME_FILE, "r", encoding="utf-8-sig") as handle:
+            theme = json.load(handle)
+        theme_id = theme.get("themeId") if isinstance(theme, dict) else ""
+        with open(os.path.join(ASSETS, "themes", "manifest.json"), "r", encoding="utf-8-sig") as handle:
+            manifest = json.load(handle)
+        if isinstance(manifest, dict) and theme_id:
+            identity = manifest.get(theme_id)
+            if identity is None:
+                for key, value in manifest.items():
+                    if theme_id.startswith(key):
+                        identity = value
+                        break
+            if isinstance(identity, dict):
+                candidate = os.path.join(ASSETS, "themes", str(identity.get("art") or ""))
+                if os.path.isfile(candidate):
+                    return candidate
+    except Exception as exc:
+        log(f"解析主题立绘失败：{exc!r}")
+    fallback = os.path.join(ASSETS, "mascot.png")
+    return fallback if os.path.isfile(fallback) else None
+
+# 语气 → 默认音色。Host 可以显式给 sound_path 覆盖，这里只是兜底，
+# 保证「Host 还没重载成新版本」时提示音也能响。
+DEFAULT_SOUND = {
+    "done": "done.wav",
+    "failed": "failed.wav",
+    "cancelled": "cancelled.wav",
+    "running": "done.wav",
+}
+
+
+def sound_settings() -> tuple[bool, float]:
+    """读 state/settings.json：{"sound": true, "volume": 0.6}。"""
+    enabled, volume = True, 1.0
+    if os.environ.get("DSH_TASK_NOTIFY_SOUND") == "0":
+        enabled = False
+    try:
+        with open(SETTINGS_FILE, "r", encoding="utf-8-sig") as handle:
+            parsed = json.load(handle)
+        if isinstance(parsed, dict):
+            if parsed.get("sound") is False:
+                enabled = False
+            raw = parsed.get("volume")
+            if isinstance(raw, (int, float)):
+                volume = max(0.0, min(1.0, float(raw)))
+    except FileNotFoundError:
+        pass
+    except Exception as exc:
+        log(f"读取 settings.json 失败：{exc!r}")
+    return enabled, volume
+
+
+def _scaled_wav(data: bytes, volume: float) -> bytes:
+    """把 16-bit PCM 的 WAV 样本按 volume 缩放（其它格式原样返回）。"""
+    if volume >= 0.999 or len(data) < 44 or data[:4] != b"RIFF":
+        return data
+    try:
+        index = 12
+        fmt = None
+        while index + 8 <= len(data):
+            chunk_id = data[index:index + 4]
+            size = struct.unpack("<I", data[index + 4:index + 8])[0]
+            body = index + 8
+            if chunk_id == b"fmt ":
+                fmt = data[body:body + 16]
+            elif chunk_id == b"data":
+                if (fmt is None
+                        or struct.unpack("<H", fmt[0:2])[0] != 1          # PCM
+                        or struct.unpack("<H", fmt[14:16])[0] != 16):     # 16-bit
+                    return data
+                raw = data[body:body + size]
+                samples = struct.unpack(f"<{len(raw) // 2}h", raw[:len(raw) - len(raw) % 2])
+                mixed = struct.pack(
+                    f"<{len(samples)}h",
+                    *(max(-32768, min(32767, int(value * volume))) for value in samples))
+                out = bytearray(data[:body]) + mixed + data[body + size:]
+                out[4:8] = struct.pack("<I", len(out) - 8)
+                return bytes(out)
+            index = body + size + (size & 1)
+    except Exception:
+        return data
+    return data
+
+
+def _prepare_sound(path: str, volume: float) -> str:
+    """返回一个可以直接交给 PlaySound 的文件路径（按音量缓存）。"""
+    key = (path, round(volume, 3))
+    cached = _sound_cache.get(key)
+    if cached and os.path.isfile(cached):
+        return cached
+    with open(path, "rb") as handle:
+        data = handle.read()
+    data = _scaled_wav(data, max(0.0, min(1.0, volume)))
+    cache_dir = os.path.join(tempfile.gettempdir(), "dsh-task-notify-sounds")
+    os.makedirs(cache_dir, exist_ok=True)
+    stem = os.path.splitext(os.path.basename(path))[0]
+    target = os.path.join(cache_dir, f"{stem}-{int(round(volume * 100))}.wav")
+    temp = f"{target}.{os.getpid()}.tmp"
+    with open(temp, "wb") as handle:
+        handle.write(data)
+    os.replace(temp, target)
+    _sound_cache[key] = target
+    return target
+
+
+def play_sound(path, volume: float = 1.0) -> None:
+    """异步播放一段提示音；任何失败都只记日志，不影响弹窗。"""
+    if not isinstance(path, str) or not path:
+        return
+    if not os.path.isfile(path):
+        log(f"提示音不存在：{path}")
+        return
+    try:
+        import winsound
+    except ImportError:
+        log("winsound 不可用，跳过提示音")
+        return
+    try:
+        sample = _prepare_sound(path, float(volume))
+        winsound.PlaySound(
+            sample, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+    except Exception as exc:
+        log(f"播放提示音失败：{exc!r}")
 
 
 def work_area():
@@ -327,6 +538,11 @@ class Popup:
                 frame = self.card
             self._paint(frame, x, y + int((1 - eased) * 10))
             user32.ShowWindow(self.hwnd, SW_SHOWNA)
+            if index == 0:
+                # 宿主用 windowsHide 启动本进程时，STARTUPINFO 里的 SW_HIDE 会
+                # 吃掉进程的**第一次** ShowWindow —— 首帧只存在于窗口管理器里，
+                # 屏幕上什么都没有。补一次调用，第一帧就能看见。
+                user32.ShowWindow(self.hwnd, SW_SHOWNA)
             if pump is not None and not pump():
                 return
             if frames > 1:
@@ -371,10 +587,14 @@ class Popup:
 class Manager:
     MARGIN_X, MARGIN_Y, GAP, MAX_VISIBLE = 16, 16, 8, 4
 
-    def __init__(self):
+    def __init__(self, scale: float = 1.0):
         self._active: list[Popup] = []
         self._owner = threading.get_ident()
         self._commands = queue.Queue()
+        self._scale = max(0.75, min(3.0, float(scale)))
+        self._margin_x = max(8, int(round(self.MARGIN_X * self._scale)))
+        self._margin_y = max(8, int(round(self.MARGIN_Y * self._scale)))
+        self._gap = max(4, int(round(self.GAP * self._scale)))
 
     def _assert_owner(self):
         if threading.get_ident() != self._owner:
@@ -398,11 +618,11 @@ class Manager:
         self._assert_owner()
         self._active = [p for p in self._active if p.hwnd]
         _l, _t, right, bottom = work_area()
-        y = bottom - self.MARGIN_Y
+        y = bottom - self._margin_y
         for popup in reversed(self._active):
             y -= popup.height
-            popup.move_to(right - self.MARGIN_X - popup.width, y)
-            y -= self.GAP
+            popup.move_to(right - self._margin_x - popup.width, y)
+            y -= self._gap
 
     def show(self, spec: dict) -> None:
         self._assert_owner()
@@ -411,13 +631,16 @@ class Manager:
             self.dismiss(spec["id"])
         while len(self._active) >= self.MAX_VISIBLE:
             self._active[0].dismiss()
-        card = render(spec)
+        spec = dict(spec)
+        spec["art_path"] = resolve_art(spec)
+        card = render(spec, scale=self._scale)
         popup = Popup(card, spec, on_click=self._clicked, on_closed=self._closed)
         self._active.append(popup)
         try:
             _l, _t, right, bottom = work_area()
-            popup.show_at(right - self.MARGIN_X - popup.width,
-                          bottom - self.MARGIN_Y - popup.height, animate=bool(spec.get("animate", True)),
+            popup.show_at(right - self._margin_x - popup.width,
+                          bottom - self._margin_y - popup.height,
+                          animate=bool(spec.get("animate", True)),
                           pump=self._pump)
             self._relayout()
             if duration > 0:
@@ -425,6 +648,14 @@ class Manager:
         except Exception:
             popup.dismiss()
             raise
+        enabled, volume = sound_settings()
+        if spec.get("sound") is not False and enabled:
+            path = spec.get("sound_path")
+            if not isinstance(path, str) or not path:
+                status = str(spec.get("status") or "done").lower()
+                path = os.path.join(SOUNDS, DEFAULT_SOUND.get(status, "done.wav"))
+            default_volume = spec.get("sound_volume", volume)
+            play_sound(path, float(default_volume))
 
     def dismiss(self, popup_id):
         self._assert_owner()
@@ -510,12 +741,20 @@ class Manager:
 
 
 def main() -> int:
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    enable_dpi_awareness()
+    scale = display_scale()
+    log(f"display scale = {scale:.2f}")
+
     # 调试/自检用：--show-file <json> 显示一次后退出
     for index, arg in enumerate(sys.argv):
         if arg == "--show-file" and index + 1 < len(sys.argv):
             with open(sys.argv[index + 1], "r", encoding="utf-8-sig") as handle:
                 spec = json.load(handle)
-            manager = Manager()
+            manager = Manager(scale)
             hold = os.environ.get("DSH_NOTIFY_HOLD")
             if hold is not None:
                 spec = dict(spec, duration_ms=0)
@@ -523,7 +762,7 @@ def main() -> int:
             manager.run_until_empty(float(hold) if hold is not None else None)
             return 0
 
-    Manager().run()
+    Manager(scale).run()
     return 0
 
 

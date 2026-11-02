@@ -14,6 +14,7 @@ import base64
 import io
 import os
 import re
+import sys
 
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
@@ -156,24 +157,38 @@ def _gradient(w: int, h: int, top, bottom) -> Image.Image:
     return Image.fromarray(np.repeat(rows, w, axis=1).astype("uint8"), "RGB")
 
 
+def _log(message: str) -> None:
+    try:
+        sys.stderr.write(f"[dsh-task-notify] {message}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
 def _load_art(spec: dict):
     raw = None
+    source = ""
     if spec.get("art_base64"):
+        source = "art_base64"
         try:
             raw = base64.b64decode(spec["art_base64"])
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as exc:
+            _log(f"立绘 base64 解码失败：{exc!r}")
             raw = None
     elif spec.get("art_path"):
+        source = str(spec["art_path"])
         try:
             with open(spec["art_path"], "rb") as handle:
                 raw = handle.read()
-        except OSError:
+        except OSError as exc:
+            _log(f"立绘读不到（{source}）：{exc!r}")
             raw = None
     if raw is None:
         return None
     try:
         return Image.open(io.BytesIO(raw)).convert("RGBA")
-    except OSError:
+    except OSError as exc:
+        _log(f"立绘解码失败（{source}）：{exc!r}")
         return None
 
 
@@ -226,8 +241,18 @@ def _wrap(draw: ImageDraw.ImageDraw, text: str, font, max_w: int, max_lines: int
     return lines
 
 
-def render(spec: dict) -> Image.Image:
-    """渲染一张通知卡。spec 见 popup.py 的指令说明。"""
+def render(spec: dict, scale: float = 1.0) -> Image.Image:
+    """渲染一张通知卡。spec 见 popup.py 的指令说明。
+
+    `scale` 是 DPI 缩放（96 DPI = 1.0）。窗口是逐像素物理像素绘制的，
+    所以在 125% / 150% 屏上必须把整张卡按同比例放大 —— 否则字体和立绘
+    会比周围界面小一圈，而只放大窗口又会让右侧立绘被裁掉。
+    """
+    factor = max(0.5, min(4.0, float(scale)))
+
+    def px(value: float) -> int:
+        return max(1, int(round(value * factor)))
+
     dark = bool(spec.get("dark", True))
     tokens = spec.get("tokens")
     palette = palette_from_tokens(tokens, dark)
@@ -254,19 +279,21 @@ def render(spec: dict) -> Image.Image:
     brand = str(spec.get("brand") or "DeepSeek Harness")
 
     art = _load_art(spec)
-    width = CARD_W
-    f_brand = _font("bold", 11)
-    f_title = _font("bold", 15)
-    f_body = _font("regular", 12)
-    f_meta = _font("regular", 10)
+    width = px(CARD_W)
+    pad_x, pad_y = px(PAD_X), px(PAD_Y)
+    art_h, art_gap = px(ART_H), px(ART_GAP)
+    f_brand = _font("bold", px(11))
+    f_title = _font("bold", px(15))
+    f_body = _font("regular", px(12))
+    f_meta = _font("regular", px(10))
 
-    text_w = width - PAD_X * 2 - ((ART_H + ART_GAP) if art is not None else 0)
+    text_w = width - pad_x * 2 - ((art_h + art_gap) if art is not None else 0)
 
     probe = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     wrapped = _wrap(probe, body, f_body, text_w, max_lines=2)
     # 品牌行 + 标题 + 正文行 + meta
-    height = PAD_Y * 2 + 19 + 21 + len(wrapped) * 16 + (15 if meta else 0)
-    height = max(height, 144 if art is not None else 96)
+    height = pad_y * 2 + px(19) + px(21) + len(wrapped) * px(16) + (px(15) if meta else 0)
+    height = max(height, px(144) if art is not None else px(96))
 
     card = _gradient(width, height, palette["surface_top"], palette["surface"]).convert("RGBA")
 
@@ -279,41 +306,43 @@ def render(spec: dict) -> Image.Image:
     draw = ImageDraw.Draw(card)
 
     # 左侧强调色条 + 发丝描边
-    draw.rounded_rectangle((0, 0, ACCENT_BAR, height), radius=1, fill=(*accent, 255))
+    draw.rounded_rectangle((0, 0, px(ACCENT_BAR), height), radius=px(1), fill=(*accent, 255))
     if isinstance(accents, list) and len(accents) >= 2:
         # The theme's signature gradient stays in a thin ribbon, away from text.
         start, end = _rgb(accents[0], accent), _rgb(accents[-1], accent)
-        for x in range(12, width - 12):
-            mix = (x - 12) / max(1, width - 24)
+        ribbon_in = px(12)
+        for x in range(ribbon_in, width - ribbon_in):
+            mix = (x - ribbon_in) / max(1, width - ribbon_in * 2)
             color = tuple(int(a * (1 - mix) + b * mix) for a, b in zip(start, end))
-            draw.line((x, height - 5, x, height - 3), fill=(*color, 220))
-    draw.rounded_rectangle((0, 0, width - 1, height - 1), radius=RADIUS,
-                           outline=(*palette["hairline"], palette["hairline_alpha"]), width=1)
+            draw.line((x, height - px(5), x, height - px(3)), fill=(*color, 220))
+    draw.rounded_rectangle((0, 0, width - 1, height - 1), radius=px(RADIUS),
+                           outline=(*palette["hairline"], palette["hairline_alpha"]),
+                           width=px(1))
 
     if art is not None:
-        fitted = _fit(art, ART_H, height - PAD_Y * 2)
-        card.alpha_composite(fitted, (width - PAD_X - fitted.width, (height - fitted.height) // 2))
+        fitted = _fit(art, art_h, height - pad_y * 2)
+        card.alpha_composite(fitted, (width - pad_x - fitted.width, (height - fitted.height) // 2))
 
-    y = PAD_Y
-    dot = 3
-    draw.ellipse((PAD_X, y + 5, PAD_X + dot * 2, y + 5 + dot * 2), fill=(*accent, 255))
-    draw.text((PAD_X + dot * 2 + 6, y), _clip(draw, brand, f_brand, text_w),
+    y = pad_y
+    dot = px(3)
+    draw.ellipse((pad_x, y + px(5), pad_x + dot * 2, y + px(5) + dot * 2), fill=(*accent, 255))
+    draw.text((pad_x + dot * 2 + px(6), y), _clip(draw, brand, f_brand, text_w),
               font=f_brand, fill=(*palette["meta"], 255))
-    y += 19
+    y += px(19)
 
-    draw.text((PAD_X, y), _clip(draw, title, f_title, text_w), font=f_title,
+    draw.text((pad_x, y), _clip(draw, title, f_title, text_w), font=f_title,
               fill=(*palette["title"], 255))
-    y += 21
+    y += px(21)
 
     for line in wrapped:
-        draw.text((PAD_X, y), line, font=f_body, fill=(*palette["body"], 255))
-        y += 16
+        draw.text((pad_x, y), line, font=f_body, fill=(*palette["body"], 255))
+        y += px(16)
 
     if meta:
-        draw.text((PAD_X, y), _clip(draw, meta, f_meta, text_w), font=f_meta,
+        draw.text((pad_x, y), _clip(draw, meta, f_meta, text_w), font=f_meta,
                   fill=(*palette["meta"], 255))
 
-    mask = _rounded_mask(width, height, RADIUS)
+    mask = _rounded_mask(width, height, px(RADIUS))
     alpha = np.minimum(np.asarray(card.getchannel("A")), np.asarray(mask))
     card.putalpha(Image.fromarray(alpha.astype("uint8"), "L"))
     return card

@@ -30,19 +30,42 @@ const ROOT = dirname(HERE);
 const ASSETS = join(ROOT, "assets");
 const STATE_DIR = join(ROOT, "state");
 const THEME_FILE = join(STATE_DIR, "theme.json");
+const SOUND_DIR = join(ASSETS, "sounds");
+const SETTINGS_FILE = join(STATE_DIR, "settings.json");
 const POPUP_SCRIPT = join(HERE, "popup.py");
 const THEME_ROUTE = "/api/dsh-task-notify/theme";
 
 /** 一轮结束原因 → 通知语气。未知原因按「完成」处理。 */
 const TONE = {
-  completed: { status: "done", title: "任务完成" },
-  aborted: { status: "cancelled", title: "任务已中止" },
-  interrupted: { status: "cancelled", title: "任务已中断" },
-  blocked: { status: "cancelled", title: "任务被阻塞" },
-  error: { status: "failed", title: "任务失败" },
-  "max-tokens": { status: "cancelled", title: "上下文用尽" },
-  forked: { status: "done", title: "任务已完成" },
+  completed: { status: "done", title: "任务完成", sound: "done.wav" },
+  aborted: { status: "cancelled", title: "任务已中止", sound: "cancelled.wav" },
+  interrupted: { status: "cancelled", title: "任务已中断", sound: "cancelled.wav" },
+  blocked: { status: "cancelled", title: "任务被阻塞", sound: "cancelled.wav" },
+  error: { status: "failed", title: "任务失败", sound: "failed.wav" },
+  "max-tokens": { status: "cancelled", title: "上下文用尽", sound: "cancelled.wav" },
+  forked: { status: "done", title: "任务已完成", sound: "done.wav" },
 };
+
+/**
+ * 提示音设置：`state/settings.json` 可写 `{"sound": false}` 或
+ * `{"volume": 0.4}`；环境变量 `DSH_TASK_NOTIFY_SOUND=0` 直接关掉。
+ * 每次通知都重读一次 —— 改完立刻生效，不用重载插件。
+ */
+function readSoundSettings() {
+  const envOff = process.env.DSH_TASK_NOTIFY_SOUND === "0";
+  let settings = {};
+  try {
+    const parsed = JSON.parse(readFileSync(SETTINGS_FILE, "utf8"));
+    if (parsed !== null && typeof parsed === "object") settings = parsed;
+  } catch {
+    /* 没有设置文件 = 默认值 */
+  }
+  const enabled = !envOff && settings.sound !== false;
+  const raw = Number(settings.volume);
+  const volume = Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 1;
+  return { enabled, volume };
+}
+
 
 /**
  * 找渲染器要用的 Python。
@@ -96,6 +119,17 @@ function elapsedLabel(startedAt) {
   const rest = seconds % 60;
   if (minutes < 60) return `${minutes} 分 ${rest} 秒`;
   return `${Math.floor(minutes / 60)} 小时 ${minutes % 60} 分`;
+}
+
+/** 主题 id 的宽松匹配：`gemini-cat` 命中 `gemini-cat-dark` 这类变体。 */
+function matchTheme(manifest, themeId) {
+  if (!themeId) return null;
+  if (manifest[themeId]) return manifest[themeId];
+  const keys = Object.keys(manifest);
+  const exact = keys.find((key) => themeId.startsWith(key));
+  if (exact) return manifest[exact];
+  const loose = keys.find((key) => key.startsWith(themeId));
+  return loose ? manifest[loose] : null;
 }
 
 export function apply(ctx) {
@@ -157,7 +191,7 @@ export function apply(ctx) {
   }
 
   /** 组装并投递一条通知。 */
-  function notify({ status, title, body, meta }) {
+  function notify({ status, title, body, meta, sound }) {
     const theme = readTheme();
     const payload = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -172,15 +206,30 @@ export function apply(ctx) {
     const themeId = typeof theme.themeId === "string" ? theme.themeId : "";
     let manifest = {};
     try { manifest = JSON.parse(readFileSync(join(ASSETS, "themes", "manifest.json"), "utf8")); } catch {}
-    const identity = manifest[themeId];
+    const identity = matchTheme(manifest, themeId);
+    let character;
     if (identity) {
       payload.theme_id = themeId;
       payload.theme_accents = identity.accents;
       payload.brand = `DeepSeek Harness · ${identity.name}`;
-      const character = join(ASSETS, "themes", identity.art);
-      if (existsSync(character)) payload.art_path = character;
+      character = join(ASSETS, "themes", identity.art);
+    } else {
+      // 认不出主题时也要有立绘：客户端上报可能还没到（刚启动 / 主题插件还没装），
+      // 以前这种情况会直接不带 art_path，用户看到的就是「立绘消失」。
+      character = join(ASSETS, "mascot.png");
     }
-    // An unrecognised/native theme has no invented character.
+    if (existsSync(character)) payload.art_path = character;
+
+    // 提示音：语气决定音色，settings.json 控制开关和音量。
+    const audio = readSoundSettings();
+    if (audio.enabled && typeof sound === "string") {
+      const sample = join(SOUND_DIR, sound);
+      if (existsSync(sample)) {
+        payload.sound_path = sample;
+        payload.sound = true;
+        payload.sound_volume = audio.volume;
+      }
+    }
 
     if (!send(payload)) ensureChild();
   }
@@ -262,13 +311,36 @@ export function apply(ctx) {
       const elapsed = elapsedLabel(started);
       const meta = elapsed.length > 0 ? `${tone.title} · 用时 ${elapsed}` : tone.title;
 
-      notify({ status: tone.status, title, body, meta });
+      notify({ status: tone.status, title, body, meta, sound: tone.sound });
     } catch (error) {
       logger.warn(`turn 通知失败：${error instanceof Error ? error.message : String(error)}`);
     }
   });
 
-  // ── 4. 生命周期 ──────────────────────────────────────────────────────
+  // ── 4. 对外通知服务 ──────────────────────────────────────────────────
+  //
+  // 对话轮次之外的长任务（典型：生图台的出图请求）不会产生 `turn/end`，
+  // 于是永远等不到下面那条通道。把它们统一收在这里：谁完成了谁来调
+  // `ctx.get("taskNotify").notify({...})`，弹的是同一条右下角通知，
+  // 不需要各自再起一个 Python 渲染进程。
+  //
+  // payload 与内部 `notify()` 对齐：
+  //   { status: "done" | "failed" | "cancelled", title, body, meta, sound }
+  ctx.provide("taskNotify", {
+    notify: (spec) => {
+      if (spec === null || typeof spec !== "object") return false;
+      notify({
+        status: typeof spec.status === "string" && spec.status.length > 0 ? spec.status : "done",
+        title: typeof spec.title === "string" && spec.title.length > 0 ? spec.title : "任务完成",
+        body: typeof spec.body === "string" ? spec.body : "",
+        meta: typeof spec.meta === "string" ? spec.meta : "",
+        sound: typeof spec.sound === "string" ? spec.sound : "done.wav",
+      });
+      return true;
+    },
+  });
+
+  // ── 5. 生命周期 ──────────────────────────────────────────────────────
   ctx.effect(() => {
     ensureChild();
     return () => {

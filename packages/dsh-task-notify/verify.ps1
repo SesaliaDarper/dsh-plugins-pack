@@ -39,6 +39,9 @@ $spec = [ordered]@{
   duration_ms = 0
   animate     = $true
   art_path    = $mascot
+  sound_path  = (Join-Path $root "assets\sounds\done.wav")
+  sound       = $true
+  sound_volume = 0.6
   tokens      = [ordered]@{
     "--dsw-alias-bg-layer-1"                = "#15172F"
     "--dsw-alias-bg-layer-2"                = "#1C1E3C"
@@ -85,4 +88,4 @@ setTimeout(() => { child.stdin.write('{"cmd":"dismiss-all"}\n'); child.stdin.end
 }
 
 Write-Host ""
-Write-Host "如果刚才右下角出现了带猫娘立绘的卡片，渲染侧就是好的。"
+Write-Host "如果刚才右下角出现了带猫娘立绘的卡片、并响了一声上行提示音，渲染侧就是好的。"
